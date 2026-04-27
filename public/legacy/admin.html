@@ -775,6 +775,34 @@ async function loadLicenses() {
   renderLicenses(licenses);
   updateOverview(licenses);
 }
+  function copyLicenseCode(code, btn) {
+  navigator.clipboard.writeText(code).then(() => {
+    const original = btn.innerHTML;
+    btn.innerHTML = '✅';
+    btn.style.background = '#00e676';
+    btn.style.color = '#000';
+    setTimeout(() => {
+      btn.innerHTML = original;
+      btn.style.background = '';
+      btn.style.color = '';
+    }, 1500);
+  }).catch(() => {
+    const ta = document.createElement('textarea');
+    ta.value = code;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    btn.innerHTML = '✅';
+    setTimeout(() => btn.innerHTML = '📋', 1500);
+  });
+}
+
+function renderLicenses(licenses) {
+  const tbody = document.getElementById('licensesTable');
+  if (licenses.length === 0) {
+    ...
+
 
 function renderLicenses(licenses) {
   const tbody = document.getElementById('licensesTable');
