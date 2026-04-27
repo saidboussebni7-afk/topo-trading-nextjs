@@ -1,0 +1,1060 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TOPO TRADING VIP — لوحة الأدمن</title>
+<link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Orbitron:wght@700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --gold:#c9a84c;--gold2:#f0d080;--dark:#04080f;--panel:#080e1a;
+  --border:#131e30;--blue:#0066ff;--cyan:#00c8ff;--text:#e8edf5;
+  --muted:#4a5a7a;--red:#ff2244;--green:#00e676;--warn:#ffc400;
+  --card:#0a1020;
+}
+
+body{font-family:'Cairo',sans-serif;background:var(--dark);color:var(--text);min-height:100vh;}
+
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:linear-gradient(rgba(0,100,255,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,100,255,0.025) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0;
+}
+
+/* LOGIN SCREEN */
+.login-screen{
+  position:fixed;inset:0;z-index:1000;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--dark);
+}
+
+.login-box{
+  background:rgba(8,14,26,0.98);border:1px solid var(--border);
+  border-radius:20px;padding:40px;width:380px;text-align:center;
+  box-shadow:0 0 0 1px rgba(201,168,76,0.1),0 40px 80px rgba(0,0,0,0.7);
+  position:relative;
+}
+
+.login-box::before{
+  content:'';position:absolute;top:0;left:20%;right:20%;height:1px;
+  background:linear-gradient(90deg,transparent,var(--gold),transparent);
+}
+
+.admin-icon{font-size:48px;margin-bottom:16px;}
+.admin-title{font-family:'Orbitron',sans-serif;font-size:16px;font-weight:900;
+  background:linear-gradient(135deg,var(--gold),var(--gold2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  margin-bottom:6px;letter-spacing:2px;
+}
+.admin-sub{font-size:12px;color:var(--muted);margin-bottom:28px;}
+
+.pw-input{
+  width:100%;background:rgba(255,255,255,0.03);border:1px solid var(--border);
+  border-radius:12px;padding:14px 18px;color:var(--text);font-size:16px;
+  text-align:center;letter-spacing:4px;outline:none;font-family:'JetBrains Mono',monospace;
+  transition:border-color 0.3s;margin-bottom:16px;
+}
+.pw-input:focus{border-color:var(--gold);}
+.pw-btn{
+  width:100%;padding:14px;border-radius:12px;border:none;
+  background:linear-gradient(135deg,var(--gold),var(--gold2));
+  color:#0a0a0a;font-family:'Cairo',sans-serif;font-size:15px;font-weight:900;
+  cursor:pointer;transition:all 0.2s;
+}
+.pw-btn:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(201,168,76,0.3);}
+.pw-err{color:var(--red);font-size:12px;margin-top:10px;display:none;}
+
+/* ADMIN LAYOUT */
+.admin-wrap{display:none;position:relative;z-index:1;}
+
+/* TOP BAR */
+.top-bar{
+  background:rgba(8,14,26,0.98);border-bottom:1px solid var(--border);
+  padding:0 24px;height:60px;display:flex;align-items:center;
+  justify-content:space-between;position:sticky;top:0;z-index:100;
+}
+.top-bar::after{
+  content:'';position:absolute;bottom:-1px;left:5%;right:5%;height:1px;
+  background:linear-gradient(90deg,transparent,var(--gold),transparent);opacity:0.4;
+}
+
+.tb-logo{font-family:'Orbitron',sans-serif;font-size:14px;font-weight:900;
+  background:linear-gradient(135deg,var(--gold),var(--gold2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+
+.tb-right{display:flex;gap:10px;align-items:center;}
+.clock-tb{font-family:'JetBrains Mono',monospace;font-size:13px;color:var(--gold);}
+.tb-btn{
+  padding:7px 14px;border-radius:8px;border:1px solid var(--border);
+  background:var(--card);color:var(--text);cursor:pointer;
+  font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;transition:all 0.2s;
+}
+.tb-btn.danger{border-color:rgba(255,34,68,0.3);color:var(--red);}
+.tb-btn:hover{border-color:var(--gold);color:var(--gold);}
+
+/* TABS */
+.tabs{
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  background:rgba(8,14,26,0.9);padding:0 24px;
+  position:sticky;top:60px;z-index:90;
+}
+.tab{
+  padding:14px 20px;font-size:13px;font-weight:700;
+  cursor:pointer;color:var(--muted);border-bottom:2px solid transparent;
+  transition:all 0.2s;display:flex;align-items:center;gap:6px;
+}
+.tab.active{color:var(--gold);border-bottom-color:var(--gold);}
+.tab:hover{color:var(--text);}
+
+/* CONTENT */
+.content{padding:24px;max-width:1200px;margin:0 auto;}
+.tab-content{display:none;}
+.tab-content.active{display:block;}
+
+/* SECTION */
+.section{
+  background:rgba(8,14,26,0.8);border:1px solid var(--border);
+  border-radius:16px;margin-bottom:20px;overflow:hidden;
+}
+.section-header{
+  padding:16px 20px;border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+}
+.sec-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:8px;}
+
+/* FORM */
+.form-grid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  gap:14px;padding:20px;
+}
+.form-item{display:flex;flex-direction:column;gap:6px;}
+.form-label{font-size:11px;color:var(--muted);font-weight:600;letter-spacing:0.5px;}
+.form-input{
+  background:rgba(255,255,255,0.03);border:1px solid var(--border);
+  border-radius:10px;padding:10px 14px;color:var(--text);
+  font-family:'Cairo',sans-serif;font-size:13px;outline:none;transition:border-color 0.2s;
+}
+.form-input:focus{border-color:var(--gold);}
+.form-select{
+  background:var(--card);border:1px solid var(--border);
+  border-radius:10px;padding:10px 14px;color:var(--text);
+  font-family:'Cairo',sans-serif;font-size:13px;outline:none;cursor:pointer;
+}
+
+.action-row{padding:0 20px 20px;display:flex;gap:10px;flex-wrap:wrap;}
+
+.btn{
+  padding:10px 20px;border-radius:10px;border:none;
+  font-family:'Cairo',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:all 0.2s;
+}
+.btn-gold{background:linear-gradient(135deg,var(--gold),var(--gold2));color:#0a0a0a;}
+.btn-gold:hover{transform:translateY(-1px);box-shadow:0 4px 15px rgba(201,168,76,0.3);}
+.btn-red{background:rgba(255,34,68,0.1);border:1px solid rgba(255,34,68,0.3);color:var(--red);}
+.btn-red:hover{background:rgba(255,34,68,0.15);}
+.btn-blue{background:rgba(0,100,255,0.1);border:1px solid rgba(0,100,255,0.3);color:var(--cyan);}
+.btn-green{background:rgba(0,230,118,0.1);border:1px solid rgba(0,230,118,0.3);color:var(--green);}
+
+/* LICENSES TABLE */
+.table-wrap{overflow-x:auto;}
+table{width:100%;border-collapse:collapse;}
+thead tr{border-bottom:1px solid var(--border);}
+th{padding:10px 14px;font-size:11px;color:var(--muted);font-weight:700;text-align:right;
+   white-space:nowrap;letter-spacing:0.5px;}
+tbody tr{border-bottom:1px solid rgba(19,30,48,0.5);transition:background 0.2s;}
+tbody tr:hover{background:rgba(255,255,255,0.02);}
+td{padding:10px 14px;font-size:12px;vertical-align:middle;}
+
+.code-cell{
+  font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:700;
+  color:var(--gold);letter-spacing:2px;
+}
+.status-badge{
+  padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;
+  white-space:nowrap;
+}
+.status-active{background:rgba(0,230,118,0.1);color:var(--green);border:1px solid rgba(0,230,118,0.2);}
+.status-expired{background:rgba(255,34,68,0.1);color:var(--red);border:1px solid rgba(255,34,68,0.2);}
+.status-disabled{background:rgba(255,196,0,0.1);color:var(--warn);border:1px solid rgba(255,196,0,0.2);}
+
+.td-actions{display:flex;gap:6px;}
+.action-btn{
+  padding:4px 10px;border-radius:6px;border:none;font-size:11px;font-weight:700;
+  cursor:pointer;font-family:'Cairo',sans-serif;transition:all 0.2s;
+}
+.ab-red{background:rgba(255,34,68,0.1);color:var(--red);border:1px solid rgba(255,34,68,0.2);}
+.ab-green{background:rgba(0,230,118,0.1);color:var(--green);border:1px solid rgba(0,230,118,0.2);}
+.ab-blue{background:rgba(0,100,255,0.1);color:var(--cyan);border:1px solid rgba(0,100,255,0.2);}
+
+/* GENERATED CODE DISPLAY */
+.code-display{
+  background:rgba(0,0,0,0.4);border:1px solid var(--gold);border-radius:12px;
+  padding:20px;text-align:center;display:none;margin:0 20px 20px;
+}
+.gen-code{
+  font-family:'JetBrains Mono',monospace;font-size:28px;font-weight:700;
+  color:var(--gold);letter-spacing:6px;margin-bottom:10px;
+}
+.copy-btn{
+  padding:8px 20px;border-radius:8px;border:1px solid rgba(201,168,76,0.3);
+  background:rgba(201,168,76,0.08);color:var(--gold);cursor:pointer;
+  font-family:'Cairo',sans-serif;font-size:12px;font-weight:700;
+}
+.copy-btn:hover{background:rgba(201,168,76,0.15);}
+
+/* STATS OVERVIEW */
+.overview-grid{
+  display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px;
+}
+.ov-card{
+  background:rgba(8,14,26,0.8);border:1px solid var(--border);border-radius:14px;
+  padding:20px;text-align:center;
+}
+.ov-num{font-size:32px;font-weight:900;font-family:'JetBrains Mono',monospace;margin-bottom:6px;}
+.ov-lbl{font-size:12px;color:var(--muted);}
+
+/* TOAST */
+.toast{
+  position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+  background:rgba(8,14,26,0.98);border:1px solid var(--gold);border-radius:12px;
+  padding:12px 24px;font-size:13px;font-weight:700;z-index:2000;
+  opacity:0;transition:opacity 0.3s;pointer-events:none;
+  box-shadow:0 8px 30px rgba(0,0,0,0.5);
+}
+.toast.show{opacity:1;}
+
+/* Firebase Config */
+.firebase-hint{
+  font-size:11px;color:var(--muted);line-height:1.6;
+  background:rgba(0,100,255,0.04);border:1px solid rgba(0,100,255,0.1);
+  border-radius:8px;padding:12px 14px;
+}
+.firebase-hint code{
+  font-family:'JetBrains Mono',monospace;color:var(--cyan);font-size:10px;
+}
+</style>
+</head>
+<body>
+
+<!-- LOGIN -->
+<div class="login-screen" id="loginScreen">
+  <div class="login-box">
+    <div class="admin-icon">🛡️</div>
+    <div class="admin-title">ADMIN PANEL</div>
+    <div class="admin-sub">TOPO TRADING VIP — لوحة التحكم</div>
+    <input type="password" class="pw-input" id="pwInput" placeholder="••••••••"
+           onkeypress="if(event.key==='Enter')checkPassword()">
+    <button class="pw-btn" onclick="checkPassword()">دخول</button>
+    <div class="pw-err" id="pwErr">❌ كلمة المرور غير صحيحة</div>
+  </div>
+</div>
+
+<!-- ADMIN WRAP -->
+<div class="admin-wrap" id="adminWrap">
+
+  <!-- TOP BAR -->
+  <div class="top-bar">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <span>🛡️</span>
+      <span class="tb-logo">TOPO ADMIN</span>
+    </div>
+    <div class="tb-right">
+      <span class="clock-tb" id="clock">00:00:00</span>
+      <a href="/signals" class="tb-btn">📡 الإشارات</a>
+      <button class="tb-btn danger" onclick="adminLogout()">خروج</button>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('licenses',this)">🔑 الأكواد</div>
+    <div class="tab" onclick="switchTab('overview',this)">📊 الإحصائيات</div>
+    <div class="tab" onclick="switchTab('signals',this)">📡 الإشارات</div>
+    <div class="tab" onclick="switchTab('settings',this)">⚙️ الإعدادات</div>
+    <div class="tab" onclick="switchTab('firebase',this)">🔥 Firebase</div>
+  </div>
+
+  <!-- CONTENT -->
+  <div class="content">
+
+    <!-- ===== LICENSES TAB ===== -->
+    <div class="tab-content active" id="tab-licenses">
+
+      <!-- Generate -->
+      <div class="section">
+        <div class="section-header">
+          <div class="sec-title">🔑 إنشاء كود جديد</div>
+        </div>
+        <div class="form-grid">
+          <div class="form-item">
+            <label class="form-label">مدة الاشتراك</label>
+            <select class="form-select" id="genDays">
+              <option value="7">7 أيام</option>
+              <option value="15">15 يوم</option>
+              <option value="30" selected>30 يوم</option>
+              <option value="60">60 يوم</option>
+              <option value="90">90 يوم</option>
+              <option value="180">6 أشهر</option>
+              <option value="365">سنة</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label class="form-label">أقصى عدد مستخدمين</label>
+            <select class="form-select" id="genMaxUsers">
+              <option value="1">1 مستخدم</option>
+              <option value="5">5 مستخدمين</option>
+              <option value="10">10 مستخدمين</option>
+              <option value="50">50 مستخدم</option>
+              <option value="100">100 مستخدم</option>
+              <option value="200" selected>200 مستخدم</option>
+              <option value="500">500 مستخدم</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label class="form-label">ملاحظة (اختياري)</label>
+            <input type="text" class="form-input" id="genNote" placeholder="مثل: VIP Group A">
+          </div>
+          <div class="form-item">
+            <label class="form-label">عدد الأكواد</label>
+            <input type="number" class="form-input" id="genCount" value="1" min="1" max="20">
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn btn-gold" onclick="generateLicenses()">⚡ إنشاء الكود</button>
+          <button class="btn btn-blue" onclick="generateBulk()">📦 إنشاء متعدد</button>
+        </div>
+        <div class="code-display" id="codeDisplay">
+          <div style="font-size:12px;color:var(--muted);margin-bottom:10px;">الكود المُنشأ:</div>
+          <div class="gen-code" id="generatedCode">----</div>
+          <div style="font-size:11px;color:var(--muted);margin-bottom:14px;" id="codeDetails"></div>
+          <button class="copy-btn" onclick="copyCode()">📋 نسخ الكود</button>
+        </div>
+      </div>
+
+      <!-- Licenses Table -->
+      <div class="section">
+        <div class="section-header">
+          <div class="sec-title">📋 الأكواد الموجودة</div>
+          <div style="display:flex;gap:8px;">
+            <button class="btn btn-blue" onclick="loadLicenses()" style="padding:6px 14px;font-size:11px;">🔄 تحديث</button>
+            <button class="btn btn-red" onclick="deleteAllExpired()" style="padding:6px 14px;font-size:11px;">🗑 حذف المنتهية</button>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>الكود</th>
+                <th>الحالة</th>
+                <th>المدة</th>
+                <th>انتهاء الصلاحية</th>
+                <th>المستخدمون</th>
+                <th>الملاحظة</th>
+                <th>آخر دخول</th>
+                <th>إجراءات</th>
+              </tr>
+            </thead>
+            <tbody id="licensesTable">
+              <tr><td colspan="8" style="text-align:center;padding:30px;color:var(--muted)">
+                اضغط "تحديث" لتحميل الأكواد
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== OVERVIEW TAB ===== -->
+    <div class="tab-content" id="tab-overview">
+      <div class="overview-grid">
+        <div class="ov-card">
+          <div class="ov-num" style="color:var(--gold)" id="ovTotal">0</div>
+          <div class="ov-lbl">إجمالي الأكواد</div>
+        </div>
+        <div class="ov-card">
+          <div class="ov-num" style="color:var(--green)" id="ovActive">0</div>
+          <div class="ov-lbl">أكواد نشطة</div>
+        </div>
+        <div class="ov-card">
+          <div class="ov-num" style="color:var(--red)" id="ovExpired">0</div>
+          <div class="ov-lbl">منتهية الصلاحية</div>
+        </div>
+        <div class="ov-card">
+          <div class="ov-num" style="color:var(--cyan)" id="ovUsers">0</div>
+          <div class="ov-lbl">إجمالي المستخدمين</div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-header"><div class="sec-title">📅 إحصائيات الأكواد</div></div>
+        <div id="overviewContent" style="padding:20px;color:var(--muted);text-align:center">
+          اضغط تحديث في تاب الأكواد لتحميل البيانات
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== SIGNALS TAB ===== -->
+    <div class="tab-content" id="tab-signals">
+      <div class="section">
+        <div class="section-header">
+          <div class="sec-title">⚡ إرسال إشارة يدوية للقناة</div>
+        </div>
+        <div class="form-grid">
+          <div class="form-item">
+            <label class="form-label">الزوج</label>
+            <select class="form-select" id="manPair">
+              <optgroup label="OTC Pairs">
+                <option>EUR/USD OTC</option><option>GBP/USD OTC</option>
+                <option>AUD/CAD OTC</option><option>EUR/JPY OTC</option>
+                <option>GBP/JPY OTC</option><option>USD/CHF OTC</option>
+                <option>NZD/USD OTC</option><option>AUD/USD OTC</option>
+              </optgroup>
+              <optgroup label="Forex">
+                <option>EUR/USD</option><option>GBP/USD</option>
+                <option>USD/JPY</option><option>AUD/USD</option>
+                <option>USD/CAD</option><option>EUR/JPY</option>
+              </optgroup>
+            </select>
+          </div>
+          <div class="form-item">
+            <label class="form-label">الاتجاه</label>
+            <select class="form-select" id="manDir">
+              <option value="CALL">📈 CALL (شراء)</option>
+              <option value="PUT">📉 PUT (بيع)</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label class="form-label">المدة</label>
+            <select class="form-select" id="manTF">
+              <option value="1">1 دقيقة</option>
+              <option value="3" selected>3 دقائق</option>
+              <option value="5">5 دقائق</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label class="form-label">الاستراتيجية</label>
+            <select class="form-select" id="manStrat">
+              <option>تقاطع EMA</option><option>انعكاس RSI</option>
+              <option>ارتداد بولنجر</option><option>شمعة بينبار</option>
+              <option>دعم ومقاومة</option><option>تباعد MACD</option>
+            </select>
+          </div>
+          <div class="form-item">
+            <label class="form-label">قوة الإشارة (%)</label>
+            <input type="number" class="form-input" id="manStrength" value="85" min="60" max="99">
+          </div>
+          <div class="form-item">
+            <label class="form-label">Bot Token</label>
+            <input type="text" class="form-input" id="adminBotToken" placeholder="1234567890:ABCdef..." style="font-family:'JetBrains Mono',monospace;font-size:11px;">
+          </div>
+          <div class="form-item">
+            <label class="form-label">Chat/Channel ID</label>
+            <input type="text" class="form-input" id="adminChatId" placeholder="-1001234567890" style="font-family:'JetBrains Mono',monospace;">
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn btn-gold" onclick="sendManualSignal()">📤 إرسال للقناة</button>
+          <button class="btn btn-blue" onclick="previewSignal()">👁 معاينة</button>
+          <button class="btn btn-green" onclick="saveTGAdmin()">💾 حفظ إعدادات TG</button>
+        </div>
+        <div id="previewBox" style="display:none;margin:0 20px 20px;background:#000;border:1px solid var(--border);border-radius:10px;padding:16px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#aaa;white-space:pre-wrap;line-height:1.6;"></div>
+      </div>
+    </div>
+
+    <!-- ===== SETTINGS TAB ===== -->
+    <div class="tab-content" id="tab-settings">
+      <div class="section">
+        <div class="section-header"><div class="sec-title">🔐 تغيير باسورد الأدمن</div></div>
+        <div class="form-grid">
+          <div class="form-item">
+            <label class="form-label">الباسورد الحالي</label>
+            <input type="password" class="form-input" id="oldPw" placeholder="••••••••">
+          </div>
+          <div class="form-item">
+            <label class="form-label">الباسورد الجديد</label>
+            <input type="password" class="form-input" id="newPw" placeholder="••••••••">
+          </div>
+          <div class="form-item">
+            <label class="form-label">تأكيد الباسورد</label>
+            <input type="password" class="form-input" id="confirmPw" placeholder="••••••••">
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn btn-gold" onclick="changePw()">💾 تغيير الباسورد</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="section-header"><div class="sec-title">🌐 إعدادات الموقع</div></div>
+        <div class="form-grid">
+          <div class="form-item" style="grid-column:1/-1;">
+            <label class="form-label">رسالة ترحيب للمستخدمين (تظهر في صفحة الإشارات)</label>
+            <input type="text" class="form-input" id="welcomeMsg" placeholder="مرحباً بك في TOPO TRADING VIP">
+          </div>
+          <div class="form-item">
+            <label class="form-label">حالة الموقع</label>
+            <select class="form-select" id="siteStatus">
+              <option value="active">✅ مفتوح</option>
+              <option value="maintenance">🔧 صيانة</option>
+            </select>
+          </div>
+        </div>
+        <div class="action-row">
+          <button class="btn btn-gold" onclick="saveSettings()">💾 حفظ الإعدادات</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== FIREBASE TAB ===== -->
+    <div class="tab-content" id="tab-firebase">
+      <div class="section">
+        <div class="section-header"><div class="sec-title">🔥 إعداد Firebase</div></div>
+        <div style="padding:20px;">
+          <div class="firebase-hint" style="margin-bottom:20px;">
+            <strong style="color:var(--gold);">خطوات إعداد Firebase:</strong><br><br>
+            1. اذهب إلى <code>console.firebase.google.com</code><br>
+            2. أنشئ مشروع جديد<br>
+            3. اذهب إلى Project Settings → General<br>
+            4. في قسم "Your apps" أضف Web App<br>
+            5. انسخ بيانات <code>firebaseConfig</code><br>
+            6. اذهب إلى Firestore Database وأنشئه في وضع Test Mode<br>
+            7. ضع البيانات في الحقول أدناه<br><br>
+            <strong style="color:var(--cyan);">Collections المطلوبة:</strong><br>
+            • <code>licenses</code> — لأكواد الترخيص<br>
+            • <code>signals</code> — لسجل الإشارات<br>
+            • <code>settings</code> — لإعدادات الموقع
+          </div>
+
+          <div class="form-grid">
+            <div class="form-item" style="grid-column:1/-1">
+              <label class="form-label">API Key</label>
+              <input type="text" class="form-input" id="fbApiKey" placeholder="AIzaSy...">
+            </div>
+            <div class="form-item">
+              <label class="form-label">Auth Domain</label>
+              <input type="text" class="form-input" id="fbAuthDomain" placeholder="project.firebaseapp.com">
+            </div>
+            <div class="form-item">
+              <label class="form-label">Project ID</label>
+              <input type="text" class="form-input" id="fbProjectId" placeholder="my-project-id">
+            </div>
+            <div class="form-item">
+              <label class="form-label">App ID</label>
+              <input type="text" class="form-input" id="fbAppId" placeholder="1:123:web:abc">
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="btn btn-gold" onclick="saveFirebaseConfig()">💾 حفظ وتوليد الكود</button>
+            <button class="btn btn-blue" onclick="copyFirebaseCode()">📋 نسخ كود التهيئة</button>
+          </div>
+          <div id="fbCodeOutput" style="display:none;margin-top:16px;background:#000;border:1px solid var(--border);border-radius:10px;padding:16px;font-family:'JetBrains Mono',monospace;font-size:11px;color:#00c8ff;white-space:pre-wrap;"></div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// JSONBIN DATABASE
+// ============================================================
+const JSONBIN_ID  = '69ee2e48856a68218974dc74';
+const JSONBIN_KEY = '$2a$10$x69VKI08PZXdy.vGGdiENuJpjwleAtpKh6XuiC2k1q5F1YPCSuW6m';
+const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
+
+async function getLicenses() {
+  const res = await fetch(JSONBIN_URL + '/latest', {
+    headers: { 'X-Master-Key': JSONBIN_KEY }
+  });
+  if (!res.ok) throw new Error('فشل تحميل البيانات من JSONBin');
+  const data = await res.json();
+  return data.record.licenses || [];
+}
+
+async function saveLicenses(licenses) {
+  const res = await fetch(JSONBIN_URL, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Master-Key': JSONBIN_KEY
+    },
+    body: JSON.stringify({ licenses })
+  });
+  if (!res.ok) throw new Error('فشل حفظ البيانات في JSONBin');
+}
+
+// ============================================================
+// PASSWORD
+// ============================================================
+const ADMIN_PW_KEY = 'topo_admin_pw';
+let ADMIN_PW = localStorage.getItem(ADMIN_PW_KEY) || 'sojod@06';
+
+function checkPassword() {
+  const val = document.getElementById('pwInput').value;
+  if (val === ADMIN_PW) {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('adminWrap').style.display = 'block';
+    sessionStorage.setItem('topo_admin', '1');
+    initAdmin();
+  } else {
+    document.getElementById('pwErr').style.display = 'block';
+    document.getElementById('pwInput').value = '';
+    document.getElementById('pwInput').focus();
+  }
+}
+
+document.getElementById('pwInput').addEventListener('keypress', e => {
+  if (e.key === 'Enter') checkPassword();
+});
+
+if (sessionStorage.getItem('topo_admin')) {
+  document.getElementById('loginScreen').style.display = 'none';
+  document.getElementById('adminWrap').style.display = 'block';
+  initAdmin();
+}
+
+function adminLogout() {
+  sessionStorage.removeItem('topo_admin');
+  document.getElementById('loginScreen').style.display = 'flex';
+  document.getElementById('adminWrap').style.display = 'none';
+}
+
+function changePw() {
+  const oldPw = document.getElementById('oldPw').value;
+  const newPw = document.getElementById('newPw').value;
+  const confirmPw = document.getElementById('confirmPw').value;
+  if (oldPw !== ADMIN_PW) { showToast('❌ الباسورد الحالي غير صحيح'); return; }
+  if (newPw.length < 6) { showToast('❌ الباسورد الجديد قصير جداً'); return; }
+  if (newPw !== confirmPw) { showToast('❌ كلمتا المرور لا تتطابقان'); return; }
+  ADMIN_PW = newPw;
+  localStorage.setItem(ADMIN_PW_KEY, newPw);
+  showToast('✅ تم تغيير الباسورد بنجاح');
+  document.getElementById('oldPw').value = '';
+  document.getElementById('newPw').value = '';
+  document.getElementById('confirmPw').value = '';
+}
+
+// ============================================================
+// TABS
+// ============================================================
+function switchTab(tab, el) {
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+}
+
+// ============================================================
+// INIT
+// ============================================================
+function initAdmin() {
+  setInterval(() => {
+    document.getElementById('clock').textContent =
+      new Date().toLocaleTimeString('en-GB', { hour12: false });
+  }, 1000);
+
+  // Load TG settings for admin signals
+  const savedToken = localStorage.getItem('topo_tg_token');
+  const savedChat = localStorage.getItem('topo_tg_chat');
+  if (savedToken) document.getElementById('adminBotToken').value = savedToken;
+  if (savedChat) document.getElementById('adminChatId').value = savedChat;
+}
+
+// ============================================================
+// LICENSE GENERATION
+// ============================================================
+function generateCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 12; i++) {
+    if (i === 4 || i === 8) code += '-';
+    code += chars[Math.floor(Math.random() * chars.length)];
+  }
+  return code;
+}
+
+async function generateLicenses() {
+  const days = parseInt(document.getElementById('genDays').value);
+  const maxUsers = parseInt(document.getElementById('genMaxUsers').value);
+  const note = document.getElementById('genNote').value.trim();
+  const count = 1;
+
+  const code = generateCode();
+  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+
+  const licenseData = {
+    code,
+    active: true,
+    days,
+    maxUsers,
+    currentUsers: 0,
+    usedBy: [],
+    note,
+    expiresAt: expiresAt,
+    createdAt: new Date(),
+    lastLogin: null
+  };
+
+  // Save to JSONBin
+  try {
+    const licenses = await getLicenses();
+    licenses.unshift({ ...licenseData, expiresAt: expiresAt.toISOString() });
+    await saveLicenses(licenses);
+    showToast('✅ تم حفظ الكود');
+  } catch(e) {
+    showToast('⚠️ خطأ في الحفظ');
+    console.error(e);
+  }
+
+  // Show generated code
+  document.getElementById('generatedCode').textContent = code;
+  document.getElementById('codeDetails').textContent =
+    `✅ ${days} يوم | 👥 حتى ${maxUsers} مستخدم | تنتهي: ${expiresAt.toLocaleDateString('ar-SA')}`;
+  document.getElementById('codeDisplay').style.display = 'block';
+
+  loadLicenses();
+}
+
+async function generateBulk() {
+  const count = parseInt(document.getElementById('genCount').value) || 1;
+  const days = parseInt(document.getElementById('genDays').value);
+  const maxUsers = parseInt(document.getElementById('genMaxUsers').value);
+  const note = document.getElementById('genNote').value.trim();
+
+  const newCodes = [];
+  for (let i = 0; i < count; i++) {
+    const code = generateCode();
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    const lic = { code, active: true, days, maxUsers, currentUsers: 0, usedBy: [], note, expiresAt: expiresAt.toISOString(), createdAt: new Date().toISOString(), lastLogin: null };
+    newCodes.push(lic);
+  }
+
+  try {
+    const licenses = await getLicenses();
+    const updated = [...newCodes, ...licenses];
+    await saveLicenses(updated);
+    showToast(`✅ تم إنشاء ${count} كود`);
+  } catch(e) {
+    showToast('⚠️ خطأ في الحفظ');
+    console.error(e);
+  }
+
+  const allCodes = newCodes.map(c => c.code).join('\n');
+  document.getElementById('generatedCode').textContent = newCodes[0].code;
+  document.getElementById('codeDetails').textContent = `تم إنشاء ${count} كود — ${days} يوم — ${maxUsers} مستخدم`;
+  document.getElementById('codeDisplay').style.display = 'block';
+
+  navigator.clipboard.writeText(allCodes).then(() => showToast(`✅ نسخ ${count} كود`)).catch(() => {});
+  loadLicenses();
+}
+
+function copyCode() {
+  const code = document.getElementById('generatedCode').textContent;
+  navigator.clipboard.writeText(code).then(() => showToast('✅ تم نسخ الكود'));
+}
+
+// ============================================================
+// LOAD LICENSES
+// ============================================================
+async function loadLicenses() {
+  let licenses = [];
+  try {
+    licenses = await getLicenses();
+  } catch(e) {
+    showToast('⚠️ خطأ في تحميل الأكواد');
+  }
+
+  renderLicenses(licenses);
+  updateOverview(licenses);
+}
+
+function renderLicenses(licenses) {
+  const tbody = document.getElementById('licensesTable');
+  if (licenses.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:30px;color:var(--muted)">لا توجد أكواد بعد</td></tr>';
+    return;
+  }
+
+  const now = new Date();
+  tbody.innerHTML = licenses.map((lic, i) => {
+    const expires = new Date(lic.expiresAt);
+    const isExpired = expires < now;
+    const statusClass = !lic.active ? 'status-disabled' : isExpired ? 'status-expired' : 'status-active';
+    const statusText = !lic.active ? '🟡 موقوف' : isExpired ? '🔴 منتهي' : '🟢 نشط';
+    const daysLeft = !isExpired ? Math.ceil((expires - now) / 86400000) : 0;
+    const lastLogin = lic.lastLogin ? new Date(lic.lastLogin).toLocaleDateString('ar-SA') : '-';
+
+    return `<tr>
+      <td><div class="code-cell">${lic.code || lic.id}</div></td>
+      <td><span class="status-badge ${statusClass}">${statusText}</span></td>
+      <td>${lic.days || '-'} يوم</td>
+      <td>
+        <div>${expires.toLocaleDateString('ar-SA')}</div>
+        <div style="font-size:10px;color:${daysLeft > 0 ? 'var(--green)' : 'var(--red)'}">
+          ${daysLeft > 0 ? `بقي ${daysLeft} يوم` : 'منتهي'}
+        </div>
+      </td>
+      <td><span style="color:var(--cyan)">${(lic.devices||[]).length}</span> / ${lic.maxUsers}</td>
+      <td style="color:var(--muted);font-size:11px">${lic.note || '-'}</td>
+      <td style="font-size:11px;color:var(--muted)">${lastLogin}</td>
+      <td>
+        <div class="td-actions">
+          ${lic.active && !isExpired
+            ? `<button class="action-btn ab-red" onclick="disableLicense('${lic.code || lic.id}',${i})">إيقاف</button>`
+            : `<button class="action-btn ab-green" onclick="enableLicense('${lic.code || lic.id}',${i})">تفعيل</button>`
+          }
+          <button class="action-btn ab-blue" onclick="extendLicense('${lic.code || lic.id}',${i})">تمديد</button>
+          <button class="action-btn" style="background:rgba(255,196,0,0.1);color:#ffc400;border:1px solid rgba(255,196,0,0.2)" onclick="resetDevices('${lic.code || lic.id}')">🔄 أجهزة</button>
+          <button class="action-btn ab-red" onclick="deleteLicense('${lic.code || lic.id}',${i})">حذف</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function updateOverview(licenses) {
+  const now = new Date();
+  const active = licenses.filter(l => l.active && new Date(l.expiresAt) > now).length;
+  const expired = licenses.filter(l => !l.active || new Date(l.expiresAt) <= now).length;
+  const totalUsers = licenses.reduce((a, b) => a + (Array.isArray(b.devices) ? b.devices.length : (b.currentUsers || 0)), 0);
+
+  document.getElementById('ovTotal').textContent = licenses.length;
+  document.getElementById('ovActive').textContent = active;
+  document.getElementById('ovExpired').textContent = expired;
+  document.getElementById('ovUsers').textContent = totalUsers;
+}
+
+// ============================================================
+// LICENSE ACTIONS
+// ============================================================
+async function resetDevices(code) {
+  if (!confirm('إعادة تعيين الأجهزة المسجّلة لهذا الكود؟ سيسمح لأجهزة جديدة بالدخول.')) return;
+  await updateLicenseField(code, { devices: [], currentUsers: 0 });
+  showToast('🔄 تم إعادة تعيين الأجهزة');
+  loadLicenses();
+}
+
+async function disableLicense(code, i) {
+  await updateLicenseField(code, { active: false });
+  showToast('🟡 تم إيقاف الكود');
+  loadLicenses();
+}
+
+async function enableLicense(code, i) {
+  await updateLicenseField(code, { active: true });
+  showToast('🟢 تم تفعيل الكود');
+  loadLicenses();
+}
+
+async function deleteLicense(code, i) {
+  if (!confirm('هل أنت متأكد من حذف هذا الكود؟')) return;
+  try {
+    const licenses = await getLicenses();
+    const filtered = licenses.filter(l => l.code !== code);
+    await saveLicenses(filtered);
+    showToast('🗑 تم حذف الكود');
+    loadLicenses();
+  } catch(e) {
+    showToast('⚠️ خطأ في الحذف');
+  }
+}
+
+async function extendLicense(code, i) {
+  const days = prompt('كم يوم تريد إضافتها؟', '30');
+  if (!days || isNaN(days)) return;
+  try {
+    const licenses = await getLicenses();
+    const lic = licenses.find(l => l.code === code);
+    if (lic) {
+      const newExpiry = new Date(Math.max(new Date(lic.expiresAt), new Date()) + parseInt(days) * 86400000);
+      await updateLicenseField(code, { expiresAt: newExpiry.toISOString() });
+      showToast(`✅ تم تمديد الكود ${days} يوم`);
+      loadLicenses();
+    }
+  } catch(e) {
+    showToast('⚠️ خطأ في التمديد');
+  }
+}
+
+async function deleteAllExpired() {
+  if (!confirm('حذف كل الأكواد المنتهية؟')) return;
+  try {
+    const licenses = await getLicenses();
+    const now = new Date();
+    const valid = licenses.filter(l => new Date(l.expiresAt) > now && l.active);
+    await saveLicenses(valid);
+    showToast(`🗑 تم حذف ${licenses.length - valid.length} كود منتهي`);
+    loadLicenses();
+  } catch(e) {
+    showToast('⚠️ خطأ في الحذف');
+  }
+}
+
+async function updateLicenseField(code, data) {
+  try {
+    const licenses = await getLicenses();
+    const idx = licenses.findIndex(l => l.code === code);
+    if (idx >= 0) {
+      licenses[idx] = { ...licenses[idx], ...data };
+      await saveLicenses(licenses);
+    }
+  } catch(e) {
+    showToast('⚠️ خطأ في التحديث');
+  }
+}
+
+// ============================================================
+// MANUAL SIGNAL
+// ============================================================
+function previewSignal() {
+  const pair = document.getElementById('manPair').value;
+  const dir = document.getElementById('manDir').value;
+  const tf = document.getElementById('manTF').value;
+  const strat = document.getElementById('manStrat').value;
+  const strength = document.getElementById('manStrength').value;
+
+  const now = new Date();
+  const entryTime = new Date(now.getTime() + 25000);
+  const expireTime = new Date(entryTime.getTime() + tf * 60000);
+  const isCall = dir === 'CALL';
+
+  const msg = `${isCall ? '📈' : '📉'} TOPO TRADING VIP ${isCall ? '📈' : '📉'}
+━━━━━━━━━━━━━━━━━━
+💹 الزوج: ${pair}
+${isCall ? '🟢 شراء (CALL)' : '🔴 بيع (PUT)'}
+📊 الاستراتيجية: ${strat}
+⏱ المدة: ${tf} دقيقة
+━━━━━━━━━━━━━━━━━━
+🕐 وقت الدخول: ${entryTime.toLocaleTimeString('en-GB',{hour12:false})}
+🏁 وقت الإغلاق: ${expireTime.toLocaleTimeString('en-GB',{hour12:false})}
+💪 قوة الإشارة: ${strength}%
+━━━━━━━━━━━━━━━━━━
+🎯 سجّل في Pocket Option واحصل على بونص 50%
+📢 @TopotradingVIP
+⚠️ التداول ينطوي على مخاطر`;
+
+  const box = document.getElementById('previewBox');
+  box.textContent = msg;
+  box.style.display = 'block';
+}
+
+async function sendManualSignal() {
+  const token = document.getElementById('adminBotToken').value.trim();
+  const chatId = document.getElementById('adminChatId').value.trim();
+  if (!token || !chatId) { showToast('⚠️ أدخل Bot Token و Chat ID'); return; }
+
+  const pair = document.getElementById('manPair').value;
+  const dir = document.getElementById('manDir').value;
+  const tf = document.getElementById('manTF').value;
+  const strat = document.getElementById('manStrat').value;
+  const strength = document.getElementById('manStrength').value;
+
+  const now = new Date();
+  const entryTime = new Date(now.getTime() + 25000);
+  const expireTime = new Date(entryTime.getTime() + tf * 60000);
+  const isCall = dir === 'CALL';
+
+  const msg =
+`${isCall ? '📈' : '📉'} *TOPO TRADING VIP* ${isCall ? '📈' : '📉'}
+━━━━━━━━━━━━━━━━━━
+💹 *الزوج:* \`${pair}\`
+${isCall ? '🟢 شراء (CALL)' : '🔴 بيع (PUT)'}
+📊 *الاستراتيجية:* ${strat}
+⏱ *المدة:* ${tf} دقيقة
+━━━━━━━━━━━━━━━━━━
+🕐 *وقت الدخول:* \`${entryTime.toLocaleTimeString('en-GB',{hour12:false})}\`
+🏁 *وقت الإغلاق:* \`${expireTime.toLocaleTimeString('en-GB',{hour12:false})}\`
+💪 *قوة الإشارة:* ${strength}%
+━━━━━━━━━━━━━━━━━━
+🎯 *سجّل في Pocket Option:*
+[احصل على بونص 50%](https://po-ru1.click/register?utm_campaign=801367&utm_source=affiliate&utm_medium=sr&a=cdMx4feSVrHSxW&ac=topovip&code=50START)
+📢 @TopotradingVIP
+_⚠️ التداول ينطوي على مخاطر_`;
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: chatId, text: msg, parse_mode: 'Markdown', disable_web_page_preview: false })
+    });
+    const data = await res.json();
+    if (data.ok) showToast(`✅ تم إرسال إشارة ${pair} للقناة`);
+    else showToast('❌ ' + (data.description || 'فشل الإرسال'));
+  } catch(e) {
+    showToast('❌ خطأ في الاتصال');
+  }
+}
+
+function saveTGAdmin() {
+  const token = document.getElementById('adminBotToken').value.trim();
+  const chatId = document.getElementById('adminChatId').value.trim();
+  localStorage.setItem('topo_tg_token', token);
+  localStorage.setItem('topo_tg_chat', chatId);
+  showToast('✅ تم حفظ إعدادات تيليجرام');
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+function saveSettings() {
+  const msg = document.getElementById('welcomeMsg').value;
+  const status = document.getElementById('siteStatus').value;
+  localStorage.setItem('topo_welcome', msg);
+  localStorage.setItem('topo_site_status', status);
+  showToast('✅ تم حفظ الإعدادات');
+}
+
+// ============================================================
+// FIREBASE CONFIG GENERATOR
+// ============================================================
+function saveFirebaseConfig() {
+  const cfg = {
+    apiKey: document.getElementById('fbApiKey').value.trim(),
+    authDomain: document.getElementById('fbAuthDomain').value.trim(),
+    projectId: document.getElementById('fbProjectId').value.trim(),
+    appId: document.getElementById('fbAppId').value.trim(),
+  };
+  localStorage.setItem('topo_fb_config', JSON.stringify(cfg));
+
+  const code = `const firebaseConfig = {
+  apiKey: "${cfg.apiKey}",
+  authDomain: "${cfg.authDomain}",
+  projectId: "${cfg.projectId}",
+  storageBucket: "${cfg.projectId}.appspot.com",
+  appId: "${cfg.appId}"
+};`;
+
+  const box = document.getElementById('fbCodeOutput');
+  box.textContent = code;
+  box.style.display = 'block';
+  showToast('✅ تم حفظ إعدادات Firebase — انسخ الكود وضعه في ملفات HTML');
+}
+
+function copyFirebaseCode() {
+  const code = document.getElementById('fbCodeOutput').textContent;
+  if (!code) { showToast('⚠️ احفظ الإعدادات أولاً'); return; }
+  navigator.clipboard.writeText(code).then(() => showToast('✅ تم نسخ كود Firebase'));
+}
+
+// ============================================================
+// TOAST
+// ============================================================
+let toastTimer;
+function showToast(text) {
+  const t = document.getElementById('toast');
+  t.textContent = text;
+  t.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
+}
+</script>
+</body>
+</html>

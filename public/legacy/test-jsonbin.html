@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>اختبار JSONBin</title>
+<style>
+body { font-family: Arial; padding: 40px; background: #1a1a2e; color: #eee; }
+.box { background: #16213e; padding: 20px; border-radius: 8px; margin: 20px 0; }
+button { background: #0f3460; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; margin: 5px; }
+button:hover { background: #e94560; }
+pre { background: #000; padding: 15px; border-radius: 5px; overflow-x: auto; }
+.success { color: #0f0; }
+.error { color: #f00; }
+</style>
+</head>
+<body>
+
+<h1>🧪 اختبار اتصال JSONBin</h1>
+
+<div class="box">
+<h3>الإعدادات الحالية:</h3>
+<pre id="config"></pre>
+</div>
+
+<div class="box">
+<button onclick="testRead()">📖 اختبار القراءة</button>
+<button onclick="testWrite()">✍️ اختبار الكتابة</button>
+<button onclick="createTestCode()">⚡ إنشاء كود تجريبي</button>
+</div>
+
+<div class="box">
+<h3>النتيجة:</h3>
+<pre id="result">في انتظار الاختبار...</pre>
+</div>
+
+<script>
+const JSONBIN_ID  = '69ee2e48856a68218974dc74';
+const JSONBIN_KEY = '$2a$10$x69VKI08PZXdy.vGGdiENuJpjwleAtpKh6XuiC2k1q5F1YPCSuW6m';
+const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
+
+document.getElementById('config').textContent = `Bin ID: ${JSONBIN_ID}\nAPI Key: ${JSONBIN_KEY.slice(0,20)}...\nURL: ${JSONBIN_URL}`;
+
+async function testRead() {
+  document.getElementById('result').innerHTML = '<span style="color:yellow">⏳ جاري القراءة...</span>';
+  try {
+    const res = await fetch(JSONBIN_URL + '/latest', {
+      headers: { 'X-Master-Key': JSONBIN_KEY }
+    });
+    const data = await res.json();
+    document.getElementById('result').innerHTML = `<span class="success">✅ نجحت القراءة!</span>\n\n${JSON.stringify(data, null, 2)}`;
+  } catch(e) {
+    document.getElementById('result').innerHTML = `<span class="error">❌ فشلت القراءة:</span>\n${e.message}`;
+  }
+}
+
+async function testWrite() {
+  document.getElementById('result').innerHTML = '<span style="color:yellow">⏳ جاري الكتابة...</span>';
+  try {
+    const testData = { licenses: [{ code: 'TEST-1234', active: true, note: 'test' }] };
+    const res = await fetch(JSONBIN_URL, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_KEY 
+      },
+      body: JSON.stringify(testData)
+    });
+    const data = await res.json();
+    document.getElementById('result').innerHTML = `<span class="success">✅ نجحت الكتابة!</span>\n\n${JSON.stringify(data, null, 2)}`;
+  } catch(e) {
+    document.getElementById('result').innerHTML = `<span class="error">❌ فشلت الكتابة:</span>\n${e.message}`;
+  }
+}
+
+async function createTestCode() {
+  document.getElementById('result').innerHTML = '<span style="color:yellow">⏳ جاري الإنشاء...</span>';
+  try {
+    // Read existing
+    const res1 = await fetch(JSONBIN_URL + '/latest', {
+      headers: { 'X-Master-Key': JSONBIN_KEY }
+    });
+    const data1 = await res1.json();
+    const licenses = data1.record.licenses || [];
+    
+    // Create new code
+    const code = 'TEST-' + Math.random().toString(36).slice(2,8).toUpperCase();
+    const newLicense = {
+      code: code,
+      active: true,
+      days: 30,
+      maxUsers: 5,
+      expiresAt: new Date(Date.now() + 30*24*60*60*1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      note: 'كود تجريبي'
+    };
+    
+    licenses.unshift(newLicense);
+    
+    // Save
+    const res2 = await fetch(JSONBIN_URL, {
+      method: 'PUT',
+      headers: { 
+        'Content-Type': 'application/json',
+        'X-Master-Key': JSONBIN_KEY 
+      },
+      body: JSON.stringify({ licenses })
+    });
+    
+    document.getElementById('result').innerHTML = `<span class="success">✅ تم إنشاء الكود!</span>\n\nالكود: <strong style="color:#0f0;font-size:20px">${code}</strong>\n\nجرّب دخول الموقع بهذا الكود الآن!`;
+  } catch(e) {
+    document.getElementById('result').innerHTML = `<span class="error">❌ فشل الإنشاء:</span>\n${e.message}\n\n${e.stack}`;
+  }
+}
+</script>
+
+</body>
+</html>
