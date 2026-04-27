@@ -1056,5 +1056,37 @@ function showToast(text) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
 }
 </script>
+  <script>
+  // 1. Block right-click
+  document.addEventListener('contextmenu', e => e.preventDefault());
+
+  // 2. Block F12, Ctrl+Shift+I/J/C, Ctrl+U
+  document.addEventListener('keydown', e => {
+    if (
+      e.key === 'F12' ||
+      (e.ctrlKey && e.shiftKey && ['I','J','C','K'].includes(e.key.toUpperCase())) ||
+      (e.ctrlKey && e.key.toUpperCase() === 'U') ||
+      (e.metaKey && e.altKey && ['I','J','C'].includes(e.key.toUpperCase())) // Mac
+    ) {
+      e.preventDefault();
+      return false;
+    }
+  });
+
+  // 3. Detect if DevTools is open → redirect away
+  setInterval(() => {
+    const start = performance.now();
+    debugger;
+    const end = performance.now();
+    if (end - start > 100) {
+      document.body.innerHTML = '<h1 style="color:white;text-align:center;margin-top:40vh;">Access Denied</h1>';
+      window.location.href = '/';
+    }
+  }, 1000);
+
+  // 4. Disable text selection (optional)
+  document.addEventListener('selectstart', e => e.preventDefault());
+</script>
+
 </body>
 </html>
