@@ -793,7 +793,12 @@ function renderLicenses(licenses) {
     const lastLogin = lic.lastLogin ? new Date(lic.lastLogin).toLocaleDateString('ar-SA') : '-';
 
     return `<tr>
-      <td><div class="code-cell">${lic.code || lic.id}</div></td>
+<td>
+  <div style="display:flex;align-items:center;gap:8px;justify-content:flex-end;">
+    <button class="action-btn ab-blue" style="padding:4px 8px;font-size:11px;" onclick="copyLicenseCode('${lic.code || lic.id}', this)" title="نسخ الكود">📋</button>
+    <div class="code-cell">${lic.code || lic.id}</div>
+  </div>
+</td>
       <td><span class="status-badge ${statusClass}">${statusText}</span></td>
       <td>${lic.days || '-'} يوم</td>
       <td>
