@@ -1089,7 +1089,7 @@ function setPairType(type, btn) {
 // They are fully independent and never conflict.
 
 function toggleAuto() {
-  // Telegram-only mode
+  // Telegram-only mode — strict sequence: Signal → Result → Signal
   if (!state.autoMode) {
     if (!state.tgToken || !state.tgChatId) {
       showToast(t('tgMissingToast'));
@@ -1097,9 +1097,10 @@ function toggleAuto() {
     }
     state.autoMode = true;
     updateModeUI();
-    generateForTelegram(); // first one immediately
-    const interval = Math.max(60, state.timeframe * 60) * 1000;
-    state.autoInterval = setInterval(generateForTelegram, interval);
+    // Fast analysis tick (every 8s) — but a new signal is only emitted when
+    // there is no active Telegram signal waiting for its result.
+    tryAutoTelegramTick(); // first attempt immediately
+    state.autoInterval = setInterval(tryAutoTelegramTick, 8000);
     showToast(t('autoOnToast'));
   } else {
     state.autoMode = false;
@@ -1109,14 +1110,32 @@ function toggleAuto() {
   }
 }
 
+// Strict Telegram pacing: never publish a new signal while the previous one
+// is still active (waiting for its result to be posted to the channel).
+function tryAutoTelegramTick() {
+  if (!state.autoMode) return;
+  if (state.tgActiveSignalId) return; // previous signal still pending its result
+  const sig = generateSignal();
+  if (!sig) return; // no high-confidence setup right now — silent wait
+  state.tgActiveSignalId = sig.id;
+  // Track it internally so tickCountdowns() can detect expiry and post the result.
+  state.signals = [sig, ...state.signals];
+  sendToTelegram(sig);
+  if (db) {
+    db.collection('signals').add({ ...sig, channel: 'telegram',
+      createdAtServer: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+  }
+}
+
 function toggleSignalMode() {
-  // Website-only mode
+  // Website-only mode — fast analysis loop, accuracy-first
   state.signalMode = !state.signalMode;
   updateModeUI();
   if (state.signalMode) {
     generateForWebsite();
-    const interval = Math.max(60, state.timeframe * 60) * 1000;
-    state.signalInterval = setInterval(generateForWebsite, interval);
+    // Analyze every 5 seconds. generateSignal() already filters by score
+    // threshold and active-pair rules, so this stays accurate while reacting fast.
+    state.signalInterval = setInterval(generateForWebsite, 5000);
     showToast(t('runningToast'));
   } else {
     if (state.signalInterval) { clearInterval(state.signalInterval); state.signalInterval = null; }
@@ -1127,20 +1146,18 @@ function toggleSignalMode() {
 function restartSignalSchedule() {
   if (state.signalInterval) { clearInterval(state.signalInterval); state.signalInterval = null; }
   if (state.signalMode) {
-    const interval = Math.max(60, state.timeframe * 60) * 1000;
-    state.signalInterval = setInterval(generateForWebsite, interval);
+    state.signalInterval = setInterval(generateForWebsite, 5000);
   }
   if (state.autoInterval) { clearInterval(state.autoInterval); state.autoInterval = null; }
   if (state.autoMode) {
-    const interval = Math.max(60, state.timeframe * 60) * 1000;
-    state.autoInterval = setInterval(generateForTelegram, interval);
+    state.autoInterval = setInterval(tryAutoTelegramTick, 8000);
   }
 }
 
 function generateForWebsite() {
   const sig = generateSignal();
   if (!sig) {
-    showToast(state.signals.length ? t('allPairsActive') : t('noSignalsToast'));
+    // Silent on the fast 5s tick — only the user's first click gets feedback (handled by toggleSignalMode toast).
     return;
   }
   state.lastSignalAt = sig.createdAt;
@@ -1155,10 +1172,13 @@ function generateForWebsite() {
   }
 }
 
+// Kept for backwards compatibility; auto Telegram now uses tryAutoTelegramTick().
 function generateForTelegram() {
+  if (state.tgActiveSignalId) return; // strict pacing
   const sig = generateSignal();
-  if (!sig) return; // silent — telegram channel only
-  // Do NOT add to state.signals (website list). Send straight to Telegram.
+  if (!sig) return;
+  state.tgActiveSignalId = sig.id;
+  state.signals = [sig, ...state.signals];
   sendToTelegram(sig);
   if (db) {
     db.collection('signals').add({ ...sig, channel: 'telegram',
@@ -1289,10 +1309,12 @@ function generateSignal() {
   const candidates = available.map(pair => ({ pair, analysis: analyzePair(pair) }))
     .sort((a, b) => b.analysis.score - a.analysis.score);
   const best = candidates[0];
-  if (!best || best.analysis.score < 80) return null;
+  // Accuracy-first: require a stronger setup before publishing (was 80).
+  if (!best || best.analysis.score < 85) return null;
 
   const createdAt = Date.now();
-  const entryTime = createdAt + 25000;
+  // Reduced entry delay from 25s to 8s for faster signal availability.
+  const entryTime = createdAt + 8000;
   const expireTime = entryTime + state.timeframe * 60 * 1000;
   const strength = Math.min(96, Math.max(80, Math.round(best.analysis.score)));
   const strengthClass = strength >= 88 ? 'high' : strength >= 80 ? 'mid' : 'low';
@@ -1549,6 +1571,11 @@ async function sendToTelegram(sig) {
     toggleTGSettings();
     return;
   }
+
+  // If nothing else is currently waiting for a result, claim the slot so that
+  // the result of THIS signal will also be posted to Telegram on expiry.
+  // This ensures manual "Send" clicks also produce a Result message.
+  if (!state.tgActiveSignalId) state.tgActiveSignalId = sig.id;
 
   const channelTag = state.tgChannelName || '@TopotradingVIP';
 
