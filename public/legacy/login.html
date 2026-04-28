@@ -27,16 +27,27 @@
   --green: #00e676;
 }
 
+html {
+  min-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
 body {
   font-family: 'Cairo', sans-serif;
   background: var(--dark);
   color: var(--text);
   min-height: 100vh;
+  min-height: 100dvh;
+  height: auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   position: relative;
+  padding: 24px 0;
 }
 
 /* Animated background */
@@ -91,6 +102,7 @@ body::before {
   width: 100%;
   max-width: 440px;
   padding: 20px;
+  margin: auto 0;
   animation: cardIn 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
@@ -450,6 +462,28 @@ body::before {
   box-shadow: 0 0 0 2px rgba(201,168,76,0.08);
 }
 .lang-flag { font-size: 14px; line-height: 1; }
+
+
+/* Scroll fix: keep the login form reachable on small screens */
+@media (max-height: 780px), (max-width: 520px) {
+  body {
+    align-items: flex-start;
+    justify-content: center;
+    padding: 14px 0 28px;
+  }
+  .login-card {
+    margin: 0 auto;
+    padding: 12px;
+  }
+  .card-inner {
+    padding: 28px 20px;
+  }
+  .logo-section { margin-bottom: 24px; }
+  .logo-wrapper { width: 74px; height: 74px; margin-bottom: 12px; }
+  .lang-bar { margin-bottom: 16px; }
+  .footer-links { margin-bottom: 8px; }
+}
+
 </style>
 </head>
 <body>
