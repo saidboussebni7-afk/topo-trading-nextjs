@@ -499,7 +499,7 @@ body::before {
     <!-- Logo -->
     <div class="logo-section">
       <div class="logo-wrapper">
-        <div class="logo-placeholder">📊</div>
+        <img src="/logo.jpg" alt="TOPO TRADING VIP" />
       </div>
       <div class="brand-name">TOPO TRADING</div>
       <div class="brand-sub">V I P &nbsp; S I G N A L S</div>
@@ -788,10 +788,10 @@ async function checkLicense() {
       }
       devices.push(deviceId);
       licenses[idx] = { ...found, devices, currentUsers: devices.length, lastLogin: new Date().toISOString() };
-      await saveLicenses(licenses);
+      // Save device registration in the background — don't block login.
+      saveLicenses(licenses).catch(err => console.error('bg save failed', err));
     } else {
-      licenses[idx] = { ...found, lastLogin: new Date().toISOString() };
-      await saveLicenses(licenses);
+      // Returning device: skip the network write entirely. lastLogin is non-critical.
     }
 
     handleSuccess(code, expires);
@@ -808,7 +808,8 @@ function handleSuccess(code, expires) {
   sessionStorage.setItem('topo_license', code);
   sessionStorage.setItem('topo_auth', 'true');
   sessionStorage.setItem('topo_expires', expires instanceof Date ? expires.toISOString() : new Date(expires).toISOString());
-  setTimeout(() => { window.location.href = '/signals'; }, 1200);
+  // Snappy redirect — go to signals immediately.
+  setTimeout(() => { window.location.href = '/signals.html'; }, 200);
 }
 
 function showMsg(type, text) {
