@@ -967,13 +967,9 @@ let state = {
   tgChatId: '',
   tgChannelName: '@TopotradingVIP',
   tgChannelLink: 'https://t.me/TopotradingVIP',
-  // Async Telegram pacing — distributed lock when Firestore is configured,
-  // local fallback otherwise. Never publish a new signal while previous one is pending.
-  tgQueue: [], // legacy, unused — kept so old refs don't crash
-  tgActiveSignalId: null,        // local mirror of who currently holds the Telegram slot
-  tgActiveSignal: null,          // full signal object (for result evaluation)
-  tgResultWatcherInterval: null,
-  clientId: (crypto.randomUUID ? crypto.randomUUID() : ('c_' + Math.random().toString(36).slice(2) + Date.now())),
+  // Telegram queue: ensures one signal at a time, waits for result before next
+  tgQueue: [],
+  tgActiveSignalId: null, // ID of signal currently sent to Telegram, waiting for result
 };
 
 // ============================================================
@@ -1012,14 +1008,6 @@ function init() {
   // Clock
   setInterval(updateClock, 1000);
   updateClock();
-
-  // Result watcher — runs in every tab so any open client can finalize a
-  // pending Telegram signal even if the tab that sent it has closed.
-  if (!state.tgResultWatcherInterval) {
-    state.tgResultWatcherInterval = setInterval(() => {
-      resultWatcherTick().catch(e => console.warn('[TG] watcher err', e));
-    }, 2000);
-  }
 
   // Countdown tick
   setInterval(tickCountdowns, 1000);
@@ -1109,11 +1097,10 @@ function toggleAuto() {
     }
     state.autoMode = true;
     updateModeUI();
-    // Fast analysis tick — actual signal emission is gated by the Telegram lock.
-    tryAutoTelegramTick().catch(e => console.warn('[TG] tick err', e));
-    state.autoInterval = setInterval(() => {
-      tryAutoTelegramTick().catch(e => console.warn('[TG] tick err', e));
-    }, 8000);
+    // Fast analysis tick (every 8s) — but a new signal is only emitted when
+    // there is no active Telegram signal waiting for its result.
+    tryAutoTelegramTick(); // first attempt immediately
+    state.autoInterval = setInterval(tryAutoTelegramTick, 8000);
     showToast(t('autoOnToast'));
   } else {
     state.autoMode = false;
@@ -1123,199 +1110,81 @@ function toggleAuto() {
   }
 }
 
-// ============================================================
-// TELEGRAM DISTRIBUTED LOCK
-// ------------------------------------------------------------
-// Guarantees: at most ONE active Telegram signal per channel at any moment,
-// across many tabs/users/bots. Result is always posted before next signal.
-// Uses Firestore transactions when `db` is configured. Falls back to a
-// per-tab in-memory lock if Firestore isn't available.
-// ============================================================
-const TG_LOCK_GRACE_MS = 30_000; // stale-lock recovery if no client finalized
-
-function tgChannelKey() {
-  // One lock document per Telegram chat id
-  return 'ch_' + String(state.tgChatId || 'default').replace(/[^A-Za-z0-9_]/g, '_');
-}
-
-async function tgClaimSlot(sig) {
-  // Returns true if THIS client successfully claimed the slot for `sig`.
-  if (!db) {
-    // Local-only fallback
-    if (state.tgActiveSignalId) return false;
-    state.tgActiveSignalId = sig.id;
-    state.tgActiveSignal = sig;
-    return true;
-  }
-  try {
-    const ref = db.collection('tg_channel_state').doc(tgChannelKey());
-    const won = await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      const now = Date.now();
-      const data = snap.exists ? snap.data() : null;
-      const stale = data && data.lockedAt &&
-        (now - (data.lockedAt.toMillis ? data.lockedAt.toMillis() : data.lockedAt)) >
-        ((data.expireMs || 0) - (data.createdMs || 0) + TG_LOCK_GRACE_MS);
-      if (data && data.activeSignalId && !stale) return false;
-      tx.set(ref, {
-        activeSignalId: sig.id,
-        activeSignal: sig,
-        status: 'pending',
-        lockedBy: state.clientId,
-        lockedAt: firebase.firestore.FieldValue.serverTimestamp(),
-        createdMs: sig.createdAt || Date.now(),
-        expireMs: sig.expireTime,
-        sentMessageId: null,
-      });
-      return true;
-    });
-    if (won) {
-      state.tgActiveSignalId = sig.id;
-      state.tgActiveSignal = sig;
-    }
-    return won;
-  } catch (e) {
-    console.warn('[TG] claim failed', e);
-    return false;
-  }
-}
-
-async function tgClaimResult(activeSignalId) {
-  // Returns true if THIS client wins the right to post the result message.
-  if (!db) {
-    return state.tgActiveSignalId === activeSignalId;
-  }
-  try {
-    const ref = db.collection('tg_channel_state').doc(tgChannelKey());
-    return await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) return false;
-      const d = snap.data();
-      if (d.activeSignalId !== activeSignalId) return false;
-      if (d.status !== 'pending') return false; // someone else already finalizing
-      tx.update(ref, { status: 'resulting', resultLockedBy: state.clientId });
-      return true;
-    });
-  } catch (e) {
-    console.warn('[TG] claim result failed', e);
-    return false;
-  }
-}
-
-async function tgReleaseSlot(signalId, extra = {}) {
-  state.tgActiveSignalId = null;
-  state.tgActiveSignal = null;
-  if (!db) return;
-  try {
-    const ref = db.collection('tg_channel_state').doc(tgChannelKey());
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(ref);
-      if (!snap.exists) return;
-      const d = snap.data();
-      if (d.activeSignalId !== signalId) return; // someone else owns it now
-      tx.update(ref, {
-        activeSignalId: null,
-        activeSignal: null,
-        status: 'idle',
-        lastResultAt: firebase.firestore.FieldValue.serverTimestamp(),
-        ...extra,
-      });
-    });
-  } catch (e) {
-    console.warn('[TG] release failed', e);
-  }
-}
-
-async function tgGetActiveLock() {
-  if (!db) {
-    return state.tgActiveSignalId
-      ? { activeSignalId: state.tgActiveSignalId, activeSignal: state.tgActiveSignal, status: 'pending' }
-      : null;
-  }
-  try {
-    const snap = await db.collection('tg_channel_state').doc(tgChannelKey()).get();
-    return snap.exists ? snap.data() : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-// ============================================================
-// AUTO TELEGRAM TICK (async-safe)
-// ============================================================
-async function tryAutoTelegramTick() {
+// Strict Telegram pacing: never publish a new signal while the previous one
+// is still active (waiting for its result to be posted to the channel).
+function tryAutoTelegramTick() {
   if (!state.autoMode) return;
-  // Cheap pre-check: if our local mirror says we're holding the slot, skip.
-  if (state.tgActiveSignalId) return;
-  // Also peek at the shared lock — avoids needless signal generation
-  const lock = await tgGetActiveLock();
-  if (lock && lock.activeSignalId) return;
-
+  if (state.tgActiveSignalId) return; // previous signal still pending its result
   const sig = generateSignal();
-  if (!sig) return;
+  if (!sig) return; // no high-confidence setup right now — silent wait
+  state.tgActiveSignalId = sig.id;
+  // Track it internally so tickCountdowns() can detect expiry and post the result.
+  state.signals = [sig, ...state.signals];
+  sendToTelegram(sig);
+  if (db) {
+    db.collection('signals').add({ ...sig, channel: 'telegram',
+      createdAtServer: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+  }
+}
 
-  const won = await tgClaimSlot(sig);
-  if (!won) return; // another tab/bot beat us to it
+function toggleSignalMode() {
+  // Website-only mode — fast analysis loop, accuracy-first
+  state.signalMode = !state.signalMode;
+  updateModeUI();
+  if (state.signalMode) {
+    generateForWebsite();
+    // Analyze every 5 seconds. generateSignal() already filters by score
+    // threshold and active-pair rules, so this stays accurate while reacting fast.
+    state.signalInterval = setInterval(generateForWebsite, 5000);
+    showToast(t('runningToast'));
+  } else {
+    if (state.signalInterval) { clearInterval(state.signalInterval); state.signalInterval = null; }
+    showToast(t('stoppedToast'));
+  }
+}
 
-  // We own the slot. Send the signal; if it fails, release the slot.
-  const ok = await sendToTelegram(sig);
-  if (!ok) {
-    await tgReleaseSlot(sig.id, { status: 'failed' });
+function restartSignalSchedule() {
+  if (state.signalInterval) { clearInterval(state.signalInterval); state.signalInterval = null; }
+  if (state.signalMode) {
+    state.signalInterval = setInterval(generateForWebsite, 5000);
+  }
+  if (state.autoInterval) { clearInterval(state.autoInterval); state.autoInterval = null; }
+  if (state.autoMode) {
+    state.autoInterval = setInterval(tryAutoTelegramTick, 8000);
+  }
+}
+
+function generateForWebsite() {
+  const sig = generateSignal();
+  if (!sig) {
+    // Silent on the fast 5s tick — only the user's first click gets feedback (handled by toggleSignalMode toast).
     return;
   }
-
-  // Mirror locally so the UI/result watcher tracks it
+  state.lastSignalAt = sig.createdAt;
   state.signals = [sig, ...state.signals].slice(0, 20);
-  if (db) {
-    db.collection('tg_signals').doc(sig.id).set({
-      ...sig, status: 'pending', channel: 'telegram',
-      sentBy: state.clientId,
-      createdAtServer: firebase.firestore.FieldValue.serverTimestamp(),
-    }).catch(() => {});
-  }
-}
-
-// ============================================================
-// RESULT WATCHER — runs in every tab, posts result when expired
-// ============================================================
-async function resultWatcherTick() {
-  let activeId, activeSignal;
-  if (db) {
-    const lock = await tgGetActiveLock();
-    if (!lock || !lock.activeSignalId || lock.status !== 'pending') return;
-    activeId = lock.activeSignalId;
-    activeSignal = lock.activeSignal;
-  } else {
-    if (!state.tgActiveSignalId) return;
-    activeId = state.tgActiveSignalId;
-    activeSignal = state.tgActiveSignal;
-  }
-  if (!activeSignal) return;
-  if (Date.now() < activeSignal.expireTime) return; // still running
-
-  // Try to claim the right to post the result. Only one client wins.
-  const won = await tgClaimResult(activeId);
-  if (!won) return;
-
-  // Evaluate result (kept as the original simulation; replace with real eval if available)
-  const result = Math.random() > 0.3 ? 'win' : 'loss';
-
-  const sent = await sendResultToTelegram(activeSignal, result);
-  // Always release the slot — even if result send failed — so the channel doesn't freeze.
-  await tgReleaseSlot(activeId, {
-    status: sent ? 'resulted' : 'result_failed',
-    lastResult: result,
-  });
-
-  // Local bookkeeping (only on the client that actually sent it)
-  addToHistory(activeSignal, result);
-  state.signals = state.signals.filter(s => s.id !== activeId);
   renderSignals();
   updateHeaderBadges();
+  if (state.soundOn) playAlert();
+  showToast(`${t('newSignalToast')}: ${sig.pair} — ${sig.direction}`);
+  if (db) {
+    db.collection('signals').add({ ...sig, channel: 'website',
+      createdAtServer: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+  }
 }
 
-// Backwards-compat alias (manual trigger)
-function generateForTelegram() { tryAutoTelegramTick(); }
+// Kept for backwards compatibility; auto Telegram now uses tryAutoTelegramTick().
+function generateForTelegram() {
+  if (state.tgActiveSignalId) return; // strict pacing
+  const sig = generateSignal();
+  if (!sig) return;
+  state.tgActiveSignalId = sig.id;
+  state.signals = [sig, ...state.signals];
+  sendToTelegram(sig);
+  if (db) {
+    db.collection('signals').add({ ...sig, channel: 'telegram',
+      createdAtServer: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+  }
+}
 
 function updateModeUI() {
   const autoBtn = document.getElementById('autoBtn');
@@ -1570,15 +1439,16 @@ function tickCountdowns() {
     const msToExpire = sig.expireTime - now;
 
     if (msToExpire < 0) {
-      // Signal expired — UI removal only.
-      // For Telegram: result is posted by the distributed resultWatcherTick(), not here,
-      // so we never double-post and any open tab can finalize.
-      // For website-only signals: log a result locally so the history still updates.
+      // Signal expired — determine result and send to Telegram
       toRemove.push(sig.id);
-      const isTelegramSignal = state.tgActiveSignalId === sig.id;
-      if (!isTelegramSignal) {
-        const result = Math.random() > 0.3 ? 'win' : 'loss';
-        addToHistory(sig, result);
+      const result = Math.random() > 0.3 ? 'win' : 'loss'; // 70% win rate simulation
+      addToHistory(sig, result);
+      // Send result to Telegram only if this was the active queued signal
+      if (state.tgToken && state.tgChatId && state.tgActiveSignalId === sig.id) {
+        sendResultToTelegram(sig, result);
+        state.tgActiveSignalId = null;
+        // Allow next queued signal to be sent after result delivered
+        setTimeout(() => processNextTelegramQueue(), 2000);
       }
       return;
     }
@@ -1671,89 +1541,44 @@ function updateHeaderBadges() {
 }
 
 // ============================================================
-// SCHEDULE RESTART (used when timeframe/pair settings change)
+// TELEGRAM QUEUE — one signal at a time, waits for result
 // ============================================================
-function restartSignalSchedule() {
-  if (state.signalInterval) { clearInterval(state.signalInterval); state.signalInterval = null; }
-  if (state.signalMode) {
-    state.signalInterval = setInterval(generateForWebsite, 5000);
-  }
-  if (state.autoInterval) { clearInterval(state.autoInterval); state.autoInterval = null; }
-  if (state.autoMode) {
-    state.autoInterval = setInterval(() => {
-      tryAutoTelegramTick().catch(e => console.warn('[TG] tick err', e));
-    }, 8000);
+function enqueueTelegram(sig) {
+  // Don't add duplicates
+  if (state.tgQueue.find(s => s.id === sig.id)) return;
+  state.tgQueue.push(sig);
+  // If nothing is currently active, process immediately
+  if (!state.tgActiveSignalId) {
+    processNextTelegramQueue();
   }
 }
 
-// ============================================================
-// LEGACY QUEUE STUBS — replaced by tgClaimSlot/tgReleaseSlot.
-// Kept as no-ops so any old call sites do nothing harmful.
-// ============================================================
-function enqueueTelegram() { /* deprecated — use tryAutoTelegramTick() */ }
-function processNextTelegramQueue() { /* deprecated — handled by resultWatcherTick */ }
-
-// ============================================================
-// LOW-LEVEL TELEGRAM FETCH WITH RETRY + TIMEOUT
-// ============================================================
-async function tgFetchWithRetry(method, body, { retries = 3, timeoutMs = 12000 } = {}) {
-  if (!state.tgToken || !state.tgChatId) {
-    return { ok: false, error: 'missing-credentials' };
-  }
-  let lastErr = null;
-  for (let attempt = 0; attempt < retries; attempt++) {
-    if (attempt > 0) {
-      // exponential backoff: 1s, 3s
-      await new Promise(r => setTimeout(r, attempt === 1 ? 1000 : 3000));
-    }
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${state.tgToken}/${method}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-        signal: ctrl.signal,
-      });
-      clearTimeout(timer);
-      const data = await res.json().catch(() => ({}));
-      if (data && data.ok) return { ok: true, result: data.result };
-      // Telegram returned an error object
-      lastErr = data && data.description ? data.description : ('http_' + res.status);
-      // Don't retry on auth/permission errors — won't get better
-      if (res.status === 401 || res.status === 403 || res.status === 400) {
-        return { ok: false, error: lastErr };
-      }
-    } catch (e) {
-      clearTimeout(timer);
-      lastErr = e && e.message ? e.message : String(e);
-    }
-  }
-  return { ok: false, error: lastErr || 'unknown' };
+function processNextTelegramQueue() {
+  if (state.tgActiveSignalId) return; // already waiting
+  if (state.tgQueue.length === 0) return;
+  const next = state.tgQueue.shift();
+  state.tgActiveSignalId = next.id;
+  sendToTelegram(next);
 }
 
 // ============================================================
-// SIGNAL MESSAGE
+// TELEGRAM SENDER
 // ============================================================
 async function sendToTelegram(sig) {
-  if (!sig) return false;
+  if (!sig) return;
   if (!state.tgToken || !state.tgChatId) {
     showToast('⚠️ اضبط إعدادات تيليجرام أولاً');
     toggleTGSettings();
-    return false;
+    return;
   }
 
-  // Manual "Send" from a card: also try to claim the slot so we'll post the result.
-  // If another signal is already active, just send the message anyway but DON'T
-  // claim — the active signal still owns result-posting rights.
-  let claimedHere = false;
-  if (!state.tgActiveSignalId) {
-    claimedHere = await tgClaimSlot(sig);
-    // If claim failed (another tab won), we still send the manual message,
-    // but won't track this signal's result.
-  }
+  // If nothing else is currently waiting for a result, claim the slot so that
+  // the result of THIS signal will also be posted to Telegram on expiry.
+  // This ensures manual "Send" clicks also produce a Result message.
+  if (!state.tgActiveSignalId) state.tgActiveSignalId = sig.id;
 
   const channelTag = state.tgChannelName || '@TopotradingVIP';
+
   const isCall = sig.direction === 'CALL';
   const emoji = isCall ? '📈' : '📉';
   const dirAr = isCall ? t('buy') : t('sell');
@@ -1777,34 +1602,39 @@ ${dirAr}
 📢 ${channelTag}
 _⚠️ التداول ينطوي على مخاطر_`;
 
-  const r = await tgFetchWithRetry('sendMessage', {
-    chat_id: state.tgChatId,
-    text: msg,
-    parse_mode: 'Markdown',
-    disable_web_page_preview: false,
-  });
-
-  if (r.ok) {
-    showToast(`✅ تم إرسال إشارة ${sig.pair} للقناة`);
-    if (db && r.result && r.result.message_id) {
-      db.collection('tg_signals').doc(sig.id).set(
-        { sentMessageId: r.result.message_id }, { merge: true }
-      ).catch(() => {});
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${state.tgToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: state.tgChatId,
+        text: msg,
+        parse_mode: 'Markdown',
+        disable_web_page_preview: false
+      })
+    });
+    const data = await res.json();
+    if (data.ok) {
+      showToast(`✅ تم إرسال إشارة ${sig.pair} للقناة`);
+    } else {
+      showToast('❌ فشل الإرسال: ' + (data.description || 'تحقق من الإعدادات'));
+      // On failure, release the active slot so queue can continue
+      if (state.tgActiveSignalId === sig.id) {
+        state.tgActiveSignalId = null;
+        setTimeout(() => processNextTelegramQueue(), 3000);
+      }
     }
-    return true;
+  } catch(e) {
+    showToast('❌ خطأ في الاتصال بتيليجرام');
+    if (state.tgActiveSignalId === sig.id) {
+      state.tgActiveSignalId = null;
+      setTimeout(() => processNextTelegramQueue(), 3000);
+    }
   }
-
-  showToast('❌ فشل الإرسال: ' + (r.error || 'تحقق من الإعدادات'));
-  // Release the slot only if we are the ones who claimed it here
-  if (claimedHere) await tgReleaseSlot(sig.id, { status: 'failed' });
-  return false;
 }
 
-// ============================================================
-// RESULT MESSAGE
-// ============================================================
 async function sendResultToTelegram(sig, result) {
-  if (!state.tgToken || !state.tgChatId) return false;
+  if (!state.tgToken || !state.tgChatId) return;
   const isWin = result === 'win';
   const isCall = sig.direction === 'CALL';
   const channelTag = state.tgChannelName || '@TopotradingVIP';
@@ -1822,12 +1652,17 @@ ${isWin
 ━━━━━━━━━━━━━━━━━━
 📢 ${channelTag}`;
 
-  const r = await tgFetchWithRetry('sendMessage', {
-    chat_id: state.tgChatId,
-    text: msg,
-    parse_mode: 'Markdown',
-  });
-  return r.ok;
+  try {
+    await fetch(`https://api.telegram.org/bot${state.tgToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: state.tgChatId,
+        text: msg,
+        parse_mode: 'Markdown'
+      })
+    });
+  } catch(e) {}
 }
 
 async function testTelegram() {
