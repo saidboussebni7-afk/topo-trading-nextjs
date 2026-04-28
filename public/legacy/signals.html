@@ -595,10 +595,10 @@ body::before{
   <div class="ctrl-group">
     <span class="ctrl-label" id="langLabel">🌐 اللغة:</span>
     <select class="lang-select" id="langSelect" onchange="setLanguage(this.value)">
-      <option value="ar">العربية</option>
-      <option value="en">English</option>
-      <option value="fr">Français</option>
-      <option value="es">Español</option>
+      <option value="ar">🇸🇦 العربية</option>
+      <option value="en">🇺🇸 English</option>
+      <option value="fr">🇫🇷 Français</option>
+      <option value="es">🇪🇸 Español</option>
     </select>
   </div>
 
@@ -726,10 +726,25 @@ const JSONBIN_KEY = '$2a$10$x69VKI08PZXdy.vGGdiENuJpjwleAtpKh6XuiC2k1q5F1YPCSuW6
 const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
 
 // ============================================================
+// SAFE NAVIGATION (avoids 404 on Vercel/Next.js where .html may strip)
+// ============================================================
+function goToLogin() {
+  // Determine working login URL based on current path. Try '/' first (Next.js root),
+  // then fall back to 'index.html' for static hosting.
+  const path = window.location.pathname;
+  // If we're under /legacy/ or any subfolder serving raw .html, keep .html
+  if (/\.html$/i.test(path) || /\/legacy\//i.test(path)) {
+    window.location.href = 'index.html';
+  } else {
+    window.location.href = '/';
+  }
+}
+
+// ============================================================
 // AUTH CHECK
 // ============================================================
 if (!sessionStorage.getItem('topo_auth')) {
-  window.location.href = 'index.html';
+  goToLogin();
 }
 
 // ============================================================
@@ -808,7 +823,7 @@ function forceLogout(reason) {
       <div style="font-size:48px;">${isDevice ? '📵' : '🚫'}</div>
       <div style="font-size:20px;font-weight:900;color:#ff2244;">${isDevice ? 'تم الوصول للحد الأقصى من الأجهزة' : 'انتهت صلاحية اشتراكك'}</div>
       <div style="font-size:14px;color:#4a5a7a;">${isDevice ? 'هذا الجهاز غير مسجّل في هذا الترخيص — تواصل مع الأدمن' : 'تم إلغاء ترخيصك — تواصل مع الأدمن للتجديد'}</div>
-      <button onclick="window.location.href='index.html'" style="margin-top:10px;padding:12px 28px;border-radius:10px;border:none;background:linear-gradient(135deg,#c9a84c,#f0d080);color:#0a0a0a;font-family:'Cairo',sans-serif;font-size:15px;font-weight:900;cursor:pointer;">الرجوع لصفحة الدخول</button>
+      <button onclick="goToLogin()" style="margin-top:10px;padding:12px 28px;border-radius:10px;border:none;background:linear-gradient(135deg,#c9a84c,#f0d080);color:#0a0a0a;font-family:'Cairo',sans-serif;font-size:15px;font-weight:900;cursor:pointer;">الرجوع لصفحة الدخول</button>
     </div>`;
 }
 
@@ -849,7 +864,9 @@ const I18N = {
     emptySignals: 'اضغط زر توليد الإشارات للتشغيل أو الإيقاف', stats: '📊 إحصائيات اليوم',
     win: '✅ نجاح', loss: '❌ خسارة', accuracy: '🎯 الدقة', total: '📈 الإجمالي', history: '📋 سجل الإشارات',
     noHistory: 'لا يوجد سجل بعد', veryStrong: 'قوي جداً', strong: 'قوي', medium: 'متوسط', enterNow: '🔥 ادخل الآن!',
-    runningToast: '🤖 توليد الإشارات مفعّل داخل الموقع فقط', stoppedToast: '⏹ تم إيقاف توليد الإشارات',
+    runningToast: '🤖 توليد الإشارات داخل الموقع فقط', stoppedToast: '⏹ تم إيقاف توليد الإشارات',
+    autoOnToast: '📡 الوضع التلقائي مفعل — الإشارات تُرسل إلى قناة تيليجرام فقط', autoOffToast: '⏹ تم إيقاف الوضع التلقائي للتيليجرام',
+    tgMissingToast: '⚠️ يرجى ضبط Bot Token و Chat ID قبل تفعيل الوضع التلقائي',
     noSignalsToast: '⚠️ لا توجد فرصة قوية حالياً، انتظر التحليل القادم', newSignalToast: '🔔 إشارة جديدة', allPairsActive: '⚠️ كل الأزواج لديها إشارات نشطة',
     send: '✈️ إرسال', entry: 'وقت الدخول', close: 'وقت الإغلاق', duration: 'المدة', strategy: 'الاستراتيجية', strength: 'قوة الإشارة',
     buy: '🟢 شراء (CALL)', sell: '🔴 بيع (PUT)', resultWin: '✅ ربح', resultLoss: '❌ خسارة', resultPending: '⏳ معلق'
@@ -863,6 +880,8 @@ const I18N = {
     win: '✅ Wins', loss: '❌ Losses', accuracy: '🎯 Accuracy', total: '📈 Total', history: '📋 Signal history',
     noHistory: 'No history yet', veryStrong: 'Very strong', strong: 'Strong', medium: 'Medium', enterNow: '🔥 Enter now!',
     runningToast: '🤖 Signal generation is running inside the site only', stoppedToast: '⏹ Signal generation stopped',
+    autoOnToast: '📡 Auto mode ON — signals are sent to the Telegram channel only', autoOffToast: '⏹ Auto Telegram mode stopped',
+    tgMissingToast: '⚠️ Please set Bot Token and Chat ID before enabling auto mode',
     noSignalsToast: '⚠️ No strong setup now, waiting for next analysis', newSignalToast: '🔔 New signal', allPairsActive: '⚠️ All pairs already have active signals',
     send: '✈️ Send', entry: 'Entry time', close: 'Close time', duration: 'Duration', strategy: 'Strategy', strength: 'Signal strength',
     buy: '🟢 Buy (CALL)', sell: '🔴 Sell (PUT)', resultWin: '✅ Win', resultLoss: '❌ Loss', resultPending: '⏳ Pending'
@@ -876,6 +895,8 @@ const I18N = {
     win: '✅ Gains', loss: '❌ Pertes', accuracy: '🎯 Précision', total: '📈 Total', history: '📋 Historique des signaux',
     noHistory: 'Aucun historique', veryStrong: 'Très fort', strong: 'Fort', medium: 'Moyen', enterNow: '🔥 Entrez maintenant!',
     runningToast: '🤖 Génération active dans le site uniquement', stoppedToast: '⏹ Génération arrêtée',
+    autoOnToast: '📡 Mode auto activé — signaux envoyés uniquement vers Telegram', autoOffToast: '⏹ Mode auto Telegram arrêté',
+    tgMissingToast: '⚠️ Configurez Bot Token et Chat ID avant d’activer le mode auto',
     noSignalsToast: '⚠️ Aucun signal fort pour le moment', newSignalToast: '🔔 Nouveau signal', allPairsActive: '⚠️ Toutes les paires ont déjà des signaux actifs',
     send: '✈️ Envoyer', entry: 'Heure d’entrée', close: 'Heure de clôture', duration: 'Durée', strategy: 'Stratégie', strength: 'Force du signal',
     buy: '🟢 Achat (CALL)', sell: '🔴 Vente (PUT)', resultWin: '✅ Gain', resultLoss: '❌ Perte', resultPending: '⏳ En attente'
@@ -889,6 +910,8 @@ const I18N = {
     win: '✅ Ganadas', loss: '❌ Perdidas', accuracy: '🎯 Precisión', total: '📈 Total', history: '📋 Historial de señales',
     noHistory: 'Sin historial todavía', veryStrong: 'Muy fuerte', strong: 'Fuerte', medium: 'Media', enterNow: '🔥 ¡Entrar ahora!',
     runningToast: '🤖 Generación activa solo dentro del sitio', stoppedToast: '⏹ Generación detenida',
+    autoOnToast: '📡 Modo automático activo — señales enviadas solo a Telegram', autoOffToast: '⏹ Modo automático de Telegram detenido',
+    tgMissingToast: '⚠️ Configure Bot Token y Chat ID antes de activar el modo automático',
     noSignalsToast: '⚠️ No hay una señal fuerte ahora', newSignalToast: '🔔 Nueva señal', allPairsActive: '⚠️ Todos los pares ya tienen señales activas',
     send: '✈️ Enviar', entry: 'Hora de entrada', close: 'Hora de cierre', duration: 'Duración', strategy: 'Estrategia', strength: 'Fuerza de señal',
     buy: '🟢 Compra (CALL)', sell: '🔴 Venta (PUT)', resultWin: '✅ Ganada', resultLoss: '❌ Perdida', resultPending: '⏳ Pendiente'
@@ -1052,7 +1075,7 @@ function setTF(val, btn) {
   document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('tfBadge').textContent = `${val} ${t('minutes')}`;
-  if (state.signalMode) restartSignalSchedule();
+  if (state.signalMode || state.autoMode) restartSignalSchedule();
 }
 
 function setPairType(type, btn) {
@@ -1061,47 +1084,100 @@ function setPairType(type, btn) {
   btn.classList.add('active');
 }
 
+// AUTO MODE  = Green button (▶ تشغيل) → Telegram channel ONLY (no website cards)
+// SIGNAL MODE = Yellow gen button (⚡)  → Website ONLY (no Telegram)
+// They are fully independent and never conflict.
+
 function toggleAuto() {
-  toggleSignalMode();
+  // Telegram-only mode
+  if (!state.autoMode) {
+    if (!state.tgToken || !state.tgChatId) {
+      showToast(t('tgMissingToast'));
+      return;
+    }
+    state.autoMode = true;
+    updateModeUI();
+    generateForTelegram(); // first one immediately
+    const interval = Math.max(60, state.timeframe * 60) * 1000;
+    state.autoInterval = setInterval(generateForTelegram, interval);
+    showToast(t('autoOnToast'));
+  } else {
+    state.autoMode = false;
+    if (state.autoInterval) { clearInterval(state.autoInterval); state.autoInterval = null; }
+    updateModeUI();
+    showToast(t('autoOffToast'));
+  }
 }
 
 function toggleSignalMode() {
+  // Website-only mode
   state.signalMode = !state.signalMode;
-  state.autoMode = state.signalMode;
-  updateSignalModeUI();
+  updateModeUI();
   if (state.signalMode) {
-    generateNow(false);
-    restartSignalSchedule();
+    generateForWebsite();
+    const interval = Math.max(60, state.timeframe * 60) * 1000;
+    state.signalInterval = setInterval(generateForWebsite, interval);
     showToast(t('runningToast'));
   } else {
-    stopSignalSchedule();
+    if (state.signalInterval) { clearInterval(state.signalInterval); state.signalInterval = null; }
     showToast(t('stoppedToast'));
   }
 }
 
 function restartSignalSchedule() {
-  stopSignalSchedule();
-  const interval = Math.max(60, state.timeframe * 60) * 1000;
-  state.signalInterval = setInterval(() => generateNow(false), interval);
-  state.autoInterval = state.signalInterval;
+  if (state.signalInterval) { clearInterval(state.signalInterval); state.signalInterval = null; }
+  if (state.signalMode) {
+    const interval = Math.max(60, state.timeframe * 60) * 1000;
+    state.signalInterval = setInterval(generateForWebsite, interval);
+  }
+  if (state.autoInterval) { clearInterval(state.autoInterval); state.autoInterval = null; }
+  if (state.autoMode) {
+    const interval = Math.max(60, state.timeframe * 60) * 1000;
+    state.autoInterval = setInterval(generateForTelegram, interval);
+  }
 }
 
-function stopSignalSchedule() {
-  if (state.signalInterval) clearInterval(state.signalInterval);
-  if (state.autoInterval && state.autoInterval !== state.signalInterval) clearInterval(state.autoInterval);
-  state.signalInterval = null;
-  state.autoInterval = null;
+function generateForWebsite() {
+  const sig = generateSignal();
+  if (!sig) {
+    showToast(state.signals.length ? t('allPairsActive') : t('noSignalsToast'));
+    return;
+  }
+  state.lastSignalAt = sig.createdAt;
+  state.signals = [sig, ...state.signals].slice(0, 20);
+  renderSignals();
+  updateHeaderBadges();
+  if (state.soundOn) playAlert();
+  showToast(`${t('newSignalToast')}: ${sig.pair} — ${sig.direction}`);
+  if (db) {
+    db.collection('signals').add({ ...sig, channel: 'website',
+      createdAtServer: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+  }
 }
 
-function updateSignalModeUI() {
+function generateForTelegram() {
+  const sig = generateSignal();
+  if (!sig) return; // silent — telegram channel only
+  // Do NOT add to state.signals (website list). Send straight to Telegram.
+  sendToTelegram(sig);
+  if (db) {
+    db.collection('signals').add({ ...sig, channel: 'telegram',
+      createdAtServer: firebase.firestore.FieldValue.serverTimestamp() }).catch(() => {});
+  }
+}
+
+function updateModeUI() {
   const autoBtn = document.getElementById('autoBtn');
   const genBtn = document.getElementById('genBtn');
-  if (autoBtn) autoBtn.classList.toggle('paused', !state.signalMode);
+  if (autoBtn) autoBtn.classList.toggle('paused', !state.autoMode);
   if (genBtn) genBtn.classList.toggle('active', state.signalMode);
-  setText('autoBtnIcon', state.signalMode ? '⏸' : '▶');
-  setText('autoBtnText', state.signalMode ? t('stop') : t('start'));
+  setText('autoBtnIcon', state.autoMode ? '⏸' : '▶');
+  setText('autoBtnText', state.autoMode ? t('stop') : t('start'));
   setText('genBtnText', state.signalMode ? t('genStop') : t('genStart'));
 }
+
+// Backwards-compat alias
+function updateSignalModeUI() { updateModeUI(); }
 
 function toggleTGSettings() {
   const s = document.getElementById('tgSettings');
@@ -1140,8 +1216,12 @@ function toggleSound() {
 }
 
 function logout() {
-  sessionStorage.clear();
-  window.location.href = 'index.html';
+  try {
+    sessionStorage.removeItem('topo_auth');
+    sessionStorage.removeItem('topo_license_verified_until');
+    sessionStorage.clear();
+  } catch (e) {}
+  goToLogin();
 }
 
 // ============================================================
