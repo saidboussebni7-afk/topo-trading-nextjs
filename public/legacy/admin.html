@@ -260,12 +260,12 @@ td{padding:10px 14px;font-size:12px;vertical-align:middle;}
   <!-- TOP BAR -->
   <div class="top-bar">
     <div style="display:flex;align-items:center;gap:12px;">
-      <span>🛡️</span>
+      <img src="/logo.jpg" alt="TOPO" style="width:36px;height:36px;border-radius:8px;border:1px solid rgba(201,168,76,0.35);object-fit:cover;" />
       <span class="tb-logo">TOPO ADMIN</span>
     </div>
     <div class="tb-right">
       <span class="clock-tb" id="clock">00:00:00</span>
-      <a href="/signals" class="tb-btn">📡 الإشارات</a>
+      <a href="/signals.html" class="tb-btn">📡 الإشارات</a>
       <button class="tb-btn danger" onclick="adminLogout()">خروج</button>
     </div>
   </div>
@@ -294,6 +294,7 @@ td{padding:10px 14px;font-size:12px;vertical-align:middle;}
           <div class="form-item">
             <label class="form-label">مدة الاشتراك</label>
             <select class="form-select" id="genDays">
+              <option value="1">1 يوم</option>
               <option value="7">7 أيام</option>
               <option value="15">15 يوم</option>
               <option value="30" selected>30 يوم</option>
@@ -703,24 +704,25 @@ async function generateLicenses() {
     lastLogin: null
   };
 
-  // Save to JSONBin
-  try {
-    const licenses = await getLicenses();
-    licenses.unshift({ ...licenseData, expiresAt: expiresAt.toISOString() });
-    await saveLicenses(licenses);
-    showToast('✅ تم حفظ الكود');
-  } catch(e) {
-    showToast('⚠️ خطأ في الحفظ');
-    console.error(e);
-  }
-
-  // Show generated code
+  // Optimistic UI — show the code instantly without waiting for the network.
   document.getElementById('generatedCode').textContent = code;
   document.getElementById('codeDetails').textContent =
     `✅ ${days} يوم | 👥 حتى ${maxUsers} مستخدم | تنتهي: ${expiresAt.toLocaleDateString('ar-SA')}`;
   document.getElementById('codeDisplay').style.display = 'block';
 
-  loadLicenses();
+  // Save in the background.
+  (async () => {
+    try {
+      const licenses = await getLicenses();
+      licenses.unshift({ ...licenseData, expiresAt: expiresAt.toISOString() });
+      await saveLicenses(licenses);
+      showToast('✅ تم حفظ الكود');
+      loadLicenses();
+    } catch(e) {
+      showToast('⚠️ خطأ في الحفظ');
+      console.error(e);
+    }
+  })();
 }
 
 async function generateBulk() {
@@ -737,23 +739,26 @@ async function generateBulk() {
     newCodes.push(lic);
   }
 
-  try {
-    const licenses = await getLicenses();
-    const updated = [...newCodes, ...licenses];
-    await saveLicenses(updated);
-    showToast(`✅ تم إنشاء ${count} كود`);
-  } catch(e) {
-    showToast('⚠️ خطأ في الحفظ');
-    console.error(e);
-  }
-
+  // Optimistic UI — show + copy instantly.
   const allCodes = newCodes.map(c => c.code).join('\n');
   document.getElementById('generatedCode').textContent = newCodes[0].code;
   document.getElementById('codeDetails').textContent = `تم إنشاء ${count} كود — ${days} يوم — ${maxUsers} مستخدم`;
   document.getElementById('codeDisplay').style.display = 'block';
-
   navigator.clipboard.writeText(allCodes).then(() => showToast(`✅ نسخ ${count} كود`)).catch(() => {});
-  loadLicenses();
+
+  // Background save.
+  (async () => {
+    try {
+      const licenses = await getLicenses();
+      const updated = [...newCodes, ...licenses];
+      await saveLicenses(updated);
+      showToast(`✅ تم إنشاء ${count} كود`);
+      loadLicenses();
+    } catch(e) {
+      showToast('⚠️ خطأ في الحفظ');
+      console.error(e);
+    }
+  })();
 }
 
 function copyCode() {
