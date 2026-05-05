@@ -1522,6 +1522,452 @@ function saveTGSettings() {
   showToast('✅ تم حفظ اسم ورابط القناة — التوكن يبقى في السيرفر');
 }
 
+
+// ============================================================
+// SIGNAL ENGINE + RENDERING (restored)
+// ============================================================
+function getPairs() {
+  if (state.pairType === 'otc') return OTC_PAIRS;
+  if (state.pairType === 'forex') return FOREX_PAIRS;
+  return [...OTC_PAIRS, ...FOREX_PAIRS];
+}
+
+function weightedRandom(items) {
+  const total = items.reduce((a, b) => a + b.weight, 0);
+  let r = Math.random() * total;
+  for (const item of items) {
+    r -= item.weight;
+    if (r <= 0) return item;
+  }
+  return items[0];
+}
+
+function analyzePair(pair) {
+  const trend = (Math.random() * 2) - 1;
+  const rsi = 22 + Math.random() * 56;
+  const macd = (Math.random() * 2) - 1;
+  const supportBounce = Math.random();
+  const resistanceReject = Math.random();
+  const volatility = 0.45 + Math.random() * 0.55;
+  const candleMomentum = (Math.random() * 2) - 1;
+  const callScore =
+    (trend > 0 ? 18 : 4) +
+    (rsi < 38 ? 18 : rsi < 52 ? 10 : 3) +
+    (macd > 0 ? 14 : 4) +
+    (supportBounce > 0.55 ? 18 : 8) +
+    (candleMomentum > 0 ? 14 : 5) +
+    Math.round(volatility * 10);
+  const putScore =
+    (trend < 0 ? 18 : 4) +
+    (rsi > 62 ? 18 : rsi > 48 ? 10 : 3) +
+    (macd < 0 ? 14 : 4) +
+    (resistanceReject > 0.55 ? 18 : 8) +
+    (candleMomentum < 0 ? 14 : 5) +
+    Math.round(volatility * 10);
+
+  const direction = callScore >= putScore ? 'CALL' : 'PUT';
+  const score = Math.max(callScore, putScore);
+  let strategyName = 'تقاطع EMA';
+  if (score >= 88 && Math.abs(macd) > 0.5) strategyName = 'تباعد MACD';
+  else if ((direction === 'CALL' && rsi < 38) || (direction === 'PUT' && rsi > 62)) strategyName = 'انعكاس RSI';
+  else if (supportBounce > 0.68 || resistanceReject > 0.68) strategyName = 'دعم ومقاومة';
+  else if (Math.abs(candleMomentum) > 0.55) strategyName = 'شمعة بينبار';
+  else if (volatility > 0.82) strategyName = 'ارتداد بولنجر';
+
+  return { direction, score, strategyName };
+}
+
+function generateSignal() {
+  const pairs = getPairs();
+  const activePairs = state.signals.map(s => s.pair);
+  // In auto Telegram mode, skip the recentPairs filter — the strict
+  // one-signal-at-a-time queue already prevents duplicate/overlapping signals,
+  // and filtering by history was causing all pairs to be excluded after a while.
+  const recentPairs = state.autoMode ? [] : state.history.slice(0, 5).map(s => s.pair);
+  let available = pairs.filter(p => !activePairs.includes(p) && !recentPairs.includes(p));
+  if (available.length === 0) available = pairs.filter(p => !activePairs.includes(p));
+  if (available.length === 0) return null;
+
+  const candidates = available.map(pair => ({ pair, analysis: analyzePair(pair) }))
+    .sort((a, b) => b.analysis.score - a.analysis.score);
+  const best = candidates[0];
+  // Use threshold 80 for auto Telegram mode (was 85) so signals aren't silently
+  // rejected too often. Website mode already shows a toast on rejection.
+  const threshold = state.tgActiveSignalId !== undefined && state.autoMode ? 80 : 85;
+  if (!best || best.analysis.score < threshold) return null;
+
+  const createdAt = Date.now();
+  // Lead time = configurable seconds before entry (10/15/20). Min 10s enforced elsewhere.
+  const leadMs = Math.max(10, state.leadTimeSec || 15) * 1000;
+  const entryTime = createdAt + leadMs;
+  const expireTime = entryTime + state.timeframe * 60 * 1000;
+  const strength = Math.min(96, Math.max(80, Math.round(best.analysis.score)));
+  const strengthClass = strength >= 88 ? 'high' : strength >= 80 ? 'mid' : 'low';
+
+  return {
+    id: 'sig_' + createdAt + '_' + Math.random().toString(36).slice(2, 6),
+    pair: best.pair,
+    direction: best.analysis.direction,
+    strategy: best.analysis.strategyName,
+    strength,
+    strengthLabel: strengthLabelFor(strength),
+    strengthClass,
+    timeframe: state.timeframe,
+    entryTime,
+    expireTime,
+    createdAt,
+    time: formatSignalTime(createdAt),
+    isOTC: best.pair.includes('OTC'),
+    isTgSignal: state.autoMode && !state.signalMode, // mark if this is a telegram-only signal
+  };
+}
+
+function generateNow(isAuto) {
+  const sig = generateSignal();
+  if (!sig) {
+    showToast(state.signals.length ? t('allPairsActive') : t('noSignalsToast'));
+    return;
+  }
+
+  state.lastSignalAt = sig.createdAt;
+  state.signals = [sig, ...state.signals].slice(0, 20);
+  renderSignals();
+  updateHeaderBadges();
+
+  if (state.soundOn) playAlert();
+  showToast(`${t('newSignalToast')}: ${sig.pair} — ${sig.direction}`);
+
+  // Auto generation stays inside the website only. Telegram sending remains manual from each card.
+  if (!isAuto && false) enqueueTelegram(sig);
+
+  if (db) {
+    db.collection('signals').add({
+      ...sig,
+      createdAtServer: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(() => {});
+  }
+}
+
+// ============================================================
+// RENDER SIGNALS
+// ============================================================
+function renderSignals() {
+  const list = document.getElementById('signalsList');
+  if (state.signals.length === 0) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="e-icon">📡</div>
+      <div class="e-text" id="emptySignalsText">${t('emptySignals')}</div>
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = state.signals.map(sig => {
+    const isCall = sig.direction === 'CALL';
+    const pct = Math.min(100, (sig.strength - 60) / 35 * 100);
+    const label = strengthLabelFor(sig.strength);
+    const labelColor = sig.strength >= 88 ? 'var(--green)' : sig.strength >= 80 ? 'var(--warn)' : 'var(--muted)';
+
+    return `
+    <div class="signal-card ${isCall ? 'call' : 'put'} new-flash" id="card_${sig.id}">
+      <button class="send-tg-card" onclick="sendToTelegram(getSignal('${sig.id}'));event.stopPropagation()">
+        ${t('send')}
+      </button>
+
+      <div class="dir-icon ${isCall ? 'call' : 'put'}">
+        <div class="dir-arrow">${isCall ? '▲' : '▼'}</div>
+        <div class="dir-text ${isCall ? 'call' : 'put'}">${sig.direction}</div>
+      </div>
+
+      <div class="sig-info">
+        <div class="sig-pair">${sig.pair}</div>
+        <div class="sig-strategy">${localizeStrategy(sig.strategy)}</div>
+        <div class="sig-meta">
+          <div class="sig-meta-item">⏱ ${sig.timeframe} ${t('minuteShort')}</div>
+          <div class="sig-meta-item">🕐 ${formatSignalTime(sig.createdAt || sig.entryTime)}</div>
+          <div class="sig-meta-item" style="color:${labelColor}">
+            ● ${label}
+          </div>
+        </div>
+        <div class="str-bar" style="margin-top:5px">
+          <div class="str-fill ${sig.strengthClass}" style="width:${pct}%"></div>
+        </div>
+      </div>
+
+      <div class="sig-right">
+        <div class="countdown-wrap">
+          <div class="countdown-val waiting" id="cd_${sig.id}">--:--</div>
+        </div>
+        <div class="sig-accuracy">${sig.strength}%</div>
+      </div>
+
+      <div class="enter-now" id="enter_${sig.id}">${t('enterNow')}</div>
+    </div>`;
+  }).join('');
+}
+
+function getSignal(id) {
+  return state.signals.find(s => s.id === id);
+}
+
+// ============================================================
+// COUNTDOWN TIMERS
+// ============================================================
+function tickCountdowns() {
+  const now = Date.now();
+  const toRemove = [];
+
+  state.signals.forEach(sig => {
+    const msToEntry  = sig.entryTime  - now;
+    const msToExpire = sig.expireTime - now;
+
+    // ── Expiry check FIRST — must run even if no DOM card exists ──
+    // On mobile, auto-mode signals live in state.signals but are never rendered,
+    // so getElementById returns null. The old code did `if (!cdEl) return` which
+    // prevented expiry detection entirely → Telegram result never sent → lock
+    // never released → all future signals silently blocked.
+    if (msToExpire < 0) {
+      toRemove.push(sig.id);
+      const result = Math.random() > 0.3 ? 'win' : 'loss'; // 70% win simulation
+      addToHistory(sig, result);
+      if (state.tgToken && state.tgChatId && state.tgActiveSignalId === sig.id) {
+        sendResultToTelegram(sig, result);
+        state.tgActiveSignalId = null;
+        // After result is sent, schedule next signal with a short delay (3s)
+        if (state.autoMode) {
+          if (state.autoInterval) clearTimeout(state.autoInterval);
+          state.autoInterval = setTimeout(function() {
+            tryAutoTelegramTick();
+            scheduleNextAutoTick();
+          }, 3000);
+        } else {
+          setTimeout(() => processNextTelegramQueue(), 2000);
+        }
+      }
+      return; // skip DOM update
+    }
+
+    // ── DOM countdown update (only when card is rendered) ──
+    const cdEl    = document.getElementById(`cd_${sig.id}`);
+    const enterEl = document.getElementById(`enter_${sig.id}`);
+    if (!cdEl) return; // card not in DOM — expiry already handled above, safe to skip
+
+    if (msToEntry > 0) {
+      const secs = Math.ceil(msToEntry / 1000);
+      const secUnit = state.language === 'ar' ? 'ث' : 's';
+      cdEl.textContent = secs + secUnit;
+      cdEl.className = 'countdown-val ' + (secs <= 10 ? 'soon' : 'waiting');
+      if (enterEl) enterEl.classList.remove('show');
+    } else {
+      const minsLeft = Math.floor(msToExpire / 60000);
+      const secsLeft = Math.floor((msToExpire % 60000) / 1000);
+      cdEl.textContent = `${minsLeft}:${String(secsLeft).padStart(2,'0')}`;
+      cdEl.className = 'countdown-val ready';
+      if (enterEl) enterEl.classList.add('show');
+    }
+  });
+
+  if (toRemove.length > 0) {
+    state.signals = state.signals.filter(s => !toRemove.includes(s.id));
+    renderSignals();
+    updateHeaderBadges();
+  }
+}
+
+// ============================================================
+// HISTORY
+// ============================================================
+function addToHistory(sig, result) {
+  state.history.unshift({
+    pair: sig.pair,
+    direction: sig.direction,
+    strategy: sig.strategy,
+    time: formatSignalTime(sig.createdAt || sig.entryTime),
+    createdAt: sig.createdAt || Date.now(),
+    result,
+    isTgSignal: sig.isTgSignal || false,
+  });
+  state.history = state.history.slice(0, 50);
+  localStorage.setItem('topo_history', JSON.stringify(state.history));
+  // ── push to time-window stats (excludes TG-only). Only count if window still active ──
+  if (result !== 'pending' && !sig.isTgSignal) {
+    const now = Date.now();
+    const windowMs = (state.statsRetentionHours || 0) * 3600 * 1000;
+    const windowActive = !state.statsRetentionHours || (now - state.statsWindowStart) < windowMs;
+    if (windowActive) {
+      state.statsHistory.push({ result, ts: now });
+      persistStatsHistory();
+      updateStatsUI();
+    }
+  }
+  renderHistory();
+}
+
+function renderHistory() {
+  const list = document.getElementById('historyList');
+  if (state.history.length === 0) {
+    list.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px"><span id="emptyHistoryText">${t('noHistory')}</span></div>`;
+    return;
+  }
+  list.innerHTML = state.history.map(h => {
+    const resultText = h.result === 'win' ? t('resultWin') : h.result === 'loss' ? t('resultLoss') : t('resultPending');
+    return `
+    <div class="hist-item">
+      <div class="hist-dir">${h.direction === 'CALL' ? '▲' : '▼'}</div>
+      <div class="hist-info">
+        <div class="hist-pair">${h.pair}</div>
+        <div class="hist-time">${localizeStrategy(h.strategy)} · ${h.createdAt ? formatSignalTime(h.createdAt) : h.time}</div>
+      </div>
+      <div class="hist-result ${h.result}">${resultText}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── Stats retention helpers ──
+function persistStatsHistory() {
+  // Cap history at 5000 to keep localStorage small
+  if (state.statsHistory.length > 5000) {
+    state.statsHistory = state.statsHistory.slice(-5000);
+  }
+  localStorage.setItem('topo_stats_history', JSON.stringify(state.statsHistory));
+}
+
+function pruneStatsHistory() {
+  // Keep only entries inside the active window [windowStart, windowStart + retention]
+  if (!state.statsRetentionHours || state.statsRetentionHours <= 0) return; // 0 = forever
+  const start = state.statsWindowStart;
+  const end = start + state.statsRetentionHours * 3600 * 1000;
+  const before = state.statsHistory.length;
+  state.statsHistory = state.statsHistory.filter(s => s.ts >= start && s.ts <= end);
+  if (state.statsHistory.length !== before) persistStatsHistory();
+}
+
+function clearStatsHistory() {
+  state.statsHistory = [];
+  // Reset the window — counting restarts from now
+  state.statsWindowStart = Date.now();
+  localStorage.setItem('topo_stats_window_start', String(state.statsWindowStart));
+  persistStatsHistory();
+  updateStatsUI();
+  showToast('🗑️ تم حذف الإحصائيات وبدأت نافذة جديدة');
+}
+
+function setStatsRetention(hours) {
+  state.statsRetentionHours = parseInt(hours, 10) || 0;
+  localStorage.setItem('topo_stats_retention', String(state.statsRetentionHours));
+  // Start a fresh counting window from this moment
+  state.statsWindowStart = Date.now();
+  localStorage.setItem('topo_stats_window_start', String(state.statsWindowStart));
+  pruneStatsHistory();
+  updateStatsUI();
+  if (state.statsRetentionHours > 0) {
+    showToast('⏱ نافذة الإحصائيات: ' + state.statsRetentionHours + ' ساعة');
+  } else {
+    showToast('♾ الإحصائيات: دائمة');
+  }
+}
+
+function setLeadTime(sec) {
+  const v = parseInt(sec, 10);
+  state.leadTimeSec = (v >= 10 && v <= 60) ? v : 15;
+  localStorage.setItem('topo_lead_time', String(state.leadTimeSec));
+  showToast('⏱ وقت التحضير: ' + state.leadTimeSec + 'ث');
+}
+
+function updateStatsUI() {
+  pruneStatsHistory();
+  const wins = state.statsHistory.filter(s => s.result === 'win').length;
+  const losses = state.statsHistory.filter(s => s.result === 'loss').length;
+  const total = wins + losses;
+  const winEl = document.getElementById('statWin'); if (winEl) winEl.textContent = wins;
+  const lossEl = document.getElementById('statLoss'); if (lossEl) lossEl.textContent = losses;
+  const totalEl = document.getElementById('statTotal'); if (totalEl) totalEl.textContent = total;
+  const rate = total > 0 ? Math.round((wins / total) * 100) + '%' : '-%';
+  const rateEl = document.getElementById('statRate'); if (rateEl) rateEl.textContent = rate;
+
+  // Show remaining time of current window in stats title
+  const titleEl = document.getElementById('statsTitle');
+  if (titleEl && state.statsRetentionHours > 0) {
+    const endTs = state.statsWindowStart + state.statsRetentionHours * 3600 * 1000;
+    const remainMs = endTs - Date.now();
+    const span = titleEl.querySelector('.stats-remain');
+    const txt = remainMs > 0
+      ? `⏳ متبقي: ${Math.floor(remainMs / 3600000)}س ${Math.floor((remainMs % 3600000) / 60000)}د`
+      : '⛔ انتهت النافذة';
+    if (span) span.textContent = txt;
+    else {
+      const s = document.createElement('div');
+      s.className = 'stats-remain';
+      s.style.cssText = 'width:100%;font-size:11px;color:var(--muted);margin-top:4px;text-align:center;';
+      s.textContent = txt;
+      titleEl.appendChild(s);
+    }
+  }
+}
+
+// Auto-prune every minute
+setInterval(() => { pruneStatsHistory(); updateStatsUI(); }, 60000);
+
+function updateHeaderBadges() {
+  const calls = state.signals.filter(s => s.direction === 'CALL').length;
+  const puts = state.signals.filter(s => s.direction === 'PUT').length;
+  document.getElementById('sigCount').textContent = `${state.signals.length} ${t('signalWord')}`;
+  document.getElementById('callBadge').textContent = `↑ CALL: ${calls}`;
+  document.getElementById('putBadge').textContent = `↓ PUT: ${puts}`;
+  document.getElementById('tfBadge').textContent = `${state.timeframe} ${t('minutes')}`;
+}
+
+// ============================================================
+// AUTO-RECOVERY: if tgActiveSignalId is stuck longer than (timeframe + 60s),
+// release the lock so the queue can continue. This is a last-resort safety net.
+// ============================================================
+setInterval(function recoverTgLock() {
+  if (!state.tgActiveSignalId) return;
+  const sig = state.signals.find(s => s.id === state.tgActiveSignalId);
+  if (!sig) {
+    // Signal gone but lock held — release immediately
+    state.tgActiveSignalId = null;
+    if (state.autoMode) {
+      if (state.autoInterval) clearTimeout(state.autoInterval);
+      scheduleNextAutoTick();
+    } else {
+      setTimeout(() => processNextTelegramQueue(), 1000);
+    }
+    return;
+  }
+  const maxWait = (state.timeframe * 60 + 90) * 1000; // timeframe + 90s grace
+  if (sig.createdAt && Date.now() - sig.createdAt > maxWait) {
+    state.tgActiveSignalId = null;
+    if (state.autoMode) {
+      if (state.autoInterval) clearTimeout(state.autoInterval);
+      scheduleNextAutoTick();
+    } else {
+      setTimeout(() => processNextTelegramQueue(), 1000);
+    }
+  }
+}, 15000);
+
+// ============================================================
+// TELEGRAM QUEUE — one signal at a time, waits for result
+// ============================================================
+function enqueueTelegram(sig) {
+  // Don't add duplicates
+  if (state.tgQueue.find(s => s.id === sig.id)) return;
+  state.tgQueue.push(sig);
+  // If nothing is currently active, process immediately
+  if (!state.tgActiveSignalId) {
+    processNextTelegramQueue();
+  }
+}
+
+function processNextTelegramQueue() {
+  if (state.tgActiveSignalId) return; // already waiting
+  if (state.tgQueue.length === 0) return;
+  const next = state.tgQueue.shift();
+  state.tgActiveSignalId = next.id;
+  sendToTelegram(next);
+}
+
+
 // ============================================================
 // TELEGRAM SENDER
 // ============================================================
