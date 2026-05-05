@@ -20,7 +20,7 @@ module.exports = async function handler(req, res) {
 
   const admin = getAdminSession(req);
   const license = getLicenseSession(req);
-  const allowLicenseSend = process.env.ALLOW_LICENSE_TELEGRAM_SEND !== 'false';
+  const allowLicenseSend = process.env.ALLOW_LICENSE_TELEGRAM_SEND === 'true';
   if (!admin && !(allowLicenseSend && license)) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const ip = getIp(req);

@@ -4,9 +4,9 @@
 
 ## الملفات المهمة
 
-- `public/legacy/admin.html` — لوحة الأدمن الجديدة، بدون أسرار داخل المتصفح.
-- `public/legacy/login.html` — صفحة الدخول أصبحت تتحقق عبر `/api/license/check`.
-- `public/legacy/signals.html` — صفحة الإشارات أصبحت تتحقق عبر `/api/license/status`.
+- `public/vip-admin-6d8f2a/index.html` — لوحة الأدمن الجديدة، بدون أسرار داخل المتصفح.
+- `public/legacy/login.html` — صفحة الدخول أصبحت تتحقق عبر `/api/license/login`.
+- `public/legacy/signals.html` — صفحة الإشارات أصبحت تتحقق عبر `/api/license/verify`.
 - `pages/api/admin/*` — عمليات الأدمن المحمية.
 - `pages/api/license/*` — تحقق الترخيص من السيرفر.
 - `lib/*` — التحقق من الجلسة، JSONBin، rate limit.
@@ -45,7 +45,8 @@ npm run dev
 
 - `/` صفحة دخول المستخدمين.
 - `/signals` صفحة الإشارات.
-- `/sojod` أو `/admin` لوحة الأدمن.
+- `/vip-admin-6d8f2a` لوحة الأدمن الجديدة.
+- `/sojod` و`/admin` تم تعطيلهما وإرجاعهما إلى الصفحة الرئيسية.
 
 ## النشر على Vercel
 
@@ -63,7 +64,7 @@ TELEGRAM_CHAT_ID
 ALLOW_LICENSE_TELEGRAM_SEND
 ```
 
-`TELEGRAM_BOT_TOKEN` و `TELEGRAM_CHAT_ID` اختياريان. يحتاجهما زر إرسال الإشارة من الأدمن، وأيضاً إرسال تيليجرام من صفحة الإشارات إذا تركت `ALLOW_LICENSE_TELEGRAM_SEND=true`.
+`TELEGRAM_BOT_TOKEN` و `TELEGRAM_CHAT_ID` اختياريان. يحتاجهما زر إرسال الإشارة من الأدمن، وأيضاً إرسال تيليجرام من صفحة الإشارات فقط إذا جعلت `ALLOW_LICENSE_TELEGRAM_SEND=true`. القيمة الآمنة الافتراضية هي `false`.
 
 4. أعد النشر Deploy.
 
@@ -73,7 +74,7 @@ ALLOW_LICENSE_TELEGRAM_SEND
 
 غيّر Telegram Bot Token من BotFather إذا كنت قد استخدمته داخل المتصفح سابقاً.
 
-احذف أي نشر قديم يحتوي على:
+احذف أي نشر قديم يحتوي على، ولا تستخدم الروابط القديمة `/sojod` أو `/admin`:
 
 - `public/legacy/test-jsonbin.html`
 - باسورد أدمن داخل JavaScript

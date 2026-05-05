@@ -26,14 +26,15 @@ module.exports = {
   reactStrictMode: false,
   async rewrites() {
     return [
-      { source: '/',        destination: '/legacy/login.html' },
-      { source: '/sojod',   destination: '/legacy/admin.html' },
-      { source: '/admin',   destination: '/legacy/admin.html' },
-      { source: '/signals', destination: '/legacy/signals.html' }
+      { source: '/', destination: '/legacy/login.html' },
+      { source: '/signals', destination: '/legacy/signals.html' },
+      { source: '/vip-admin-6d8f2a', destination: '/vip-admin-6d8f2a/index.html' }
     ];
   },
   async redirects() {
     return [
+      { source: '/sojod', destination: '/', permanent: false },
+      { source: '/admin', destination: '/', permanent: false },
       { source: '/test-jsonbin', destination: '/', permanent: false },
       { source: '/legacy/test-jsonbin.html', destination: '/', permanent: false }
     ];
@@ -41,7 +42,8 @@ module.exports = {
   async headers() {
     return [
       { source: '/:path*', headers: securityHeaders },
-      { source: '/legacy/admin.html', headers: [{ key: 'Cache-Control', value: 'no-store, max-age=0' }] },
+      { source: '/vip-admin-6d8f2a', headers: [{ key: 'Cache-Control', value: 'no-store, max-age=0' }] },
+      { source: '/vip-admin-6d8f2a/:path*', headers: [{ key: 'Cache-Control', value: 'no-store, max-age=0' }] },
       { source: '/api/:path*', headers: [{ key: 'Cache-Control', value: 'no-store, max-age=0' }] }
     ];
   }
