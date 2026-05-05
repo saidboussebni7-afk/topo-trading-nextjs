@@ -1,19 +1,16 @@
 const { createLicenseSession, requireSameOrigin } = require('../../../lib/session');
 const { getLicenses, saveLicenses } = require('../../../lib/jsonbin');
 
+const EXPIRATION_GRACE_MS = 2 * 60 * 1000; // 2 minutes grace for API/network delay
+
 function normalizeCode(code) {
   return String(code || '').replace(/-/g, '').replace(/\s+/g, '').trim().toUpperCase();
 }
 
-function publicLicense(lic) {
-  return {
-    code: lic.code || lic.id,
-    active: lic.active !== false,
-    expiresAt: lic.expiresAt || null,
-    maxUsers: lic.maxUsers || lic.maxDevices || 1,
-    currentUsers: Array.isArray(lic.devices) ? lic.devices.length : 0,
-    devices: Array.isArray(lic.devices) ? lic.devices : []
-  };
+function validIsoDate(value, fallbackMs) {
+  const t = new Date(value || 0).getTime();
+  if (Number.isFinite(t) && t > 0) return new Date(t).toISOString();
+  return new Date(Date.now() + fallbackMs).toISOString();
 }
 
 function getDeviceId(req) {
@@ -24,7 +21,26 @@ function getDeviceId(req) {
   const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown')
     .split(',')[0]
     .trim();
+
   return Buffer.from(`${ua}|${ip}`).toString('base64url').slice(0, 120);
+}
+
+function publicLicense(lic) {
+  const days = Math.max(1, Number(lic.days || 30));
+  const expiresAt = validIsoDate(lic.expiresAt, days * 24 * 60 * 60 * 1000);
+  const expiresMs = new Date(expiresAt).getTime();
+
+  return {
+    code: lic.code || lic.id,
+    active: lic.active !== false,
+    expiresAt,
+    expiresIn: Math.max(0, expiresMs - Date.now()),
+    serverTime: new Date().toISOString(),
+    graceSeconds: Math.floor(EXPIRATION_GRACE_MS / 1000),
+    maxUsers: Number(lic.maxUsers || lic.maxDevices || 1),
+    currentUsers: Array.isArray(lic.devices) ? lic.devices.length : 0,
+    devices: Array.isArray(lic.devices) ? lic.devices : []
+  };
 }
 
 export default async function handler(req, res) {
@@ -56,10 +72,18 @@ export default async function handler(req, res) {
     }
 
     const lic = licenses[idx];
-    const expires = lic.expiresAt ? new Date(lic.expiresAt).getTime() : 0;
+    const days = Math.max(1, Number(lic.days || 30));
+    const expiresAt = validIsoDate(lic.expiresAt, days * 24 * 60 * 60 * 1000);
+    const expiresMs = new Date(expiresAt).getTime();
 
-    if (lic.active === false || (expires && expires <= Date.now())) {
-      return res.status(403).json({ ok: false, error: 'license_inactive_or_expired' });
+    // Grace prevents false expiry when API/server/client timing is delayed.
+    if (lic.active === false || expiresMs + EXPIRATION_GRACE_MS <= Date.now()) {
+      return res.status(403).json({
+        ok: false,
+        error: 'license_inactive_or_expired',
+        expiresAt,
+        serverTime: new Date().toISOString()
+      });
     }
 
     const maxUsers = Math.max(1, Number(lic.maxUsers || lic.maxDevices || 1));
@@ -77,6 +101,7 @@ export default async function handler(req, res) {
       ...lic,
       code: lic.code || lic.id,
       active: true,
+      expiresAt,
       devices,
       currentUsers: devices.length,
       lastLogin: new Date().toISOString()
@@ -88,7 +113,6 @@ export default async function handler(req, res) {
       }
     } catch (e) {
       console.error('license_save_warning', e);
-      // Do not block login if saving device fails.
     }
 
     createLicenseSession(req, res, {
@@ -96,10 +120,19 @@ export default async function handler(req, res) {
       deviceId
     });
 
+    const publicLic = publicLicense(licenses[idx]);
+
     return res.status(200).json({
       ok: true,
       valid: true,
-      license: publicLicense(licenses[idx])
+      license: publicLic,
+      code: publicLic.code,
+      expiresAt: publicLic.expiresAt,
+      expiresIn: publicLic.expiresIn,
+      serverTime: publicLic.serverTime,
+      graceSeconds: publicLic.graceSeconds,
+      maxUsers: publicLic.maxUsers,
+      currentUsers: publicLic.currentUsers
     });
   } catch (e) {
     console.error('license_login_error', e);
