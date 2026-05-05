@@ -1,0 +1,11 @@
+إصلاح خطأ 404 للوحة الأدمن
+
+الرابط الصحيح بعد رفع هذه النسخة:
+https://www.topovip.shop/vip-admin-6d8f2a
+
+مهم:
+1. ارفع المشروع كاملاً إلى Vercel أو استضافة تدعم Next.js.
+2. لا ترفع مجلد public فقط.
+3. ضع Environment Variables في الاستضافة: JSONBIN_ID, JSONBIN_KEY, ADMIN_PASSWORD_HASH, ADMIN_SESSION_SECRET, TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID.
+4. بعد الرفع اعمل Redeploy كامل.
+5. المسارات /sojod و /admin و /legacy/admin.html معطلة عمداً.
