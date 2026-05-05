@@ -669,20 +669,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
 <script>
 // ============================================================
-// JSONBIN DATABASE
+// SECURE LICENSE LOGIN — لا توجد مفاتيح JSONBin في المتصفح
 // ============================================================
-const JSONBIN_ID  = '69ee2e48856a68218974dc74';
-const JSONBIN_KEY = '$2a$10$x69VKI08PZXdy.vGGdiENuJpjwleAtpKh6XuiC2k1q5F1YPCSuW6m';
-const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
-
-async function getLicenses() {
-  const res = await fetch(JSONBIN_URL + '/latest', {
-    headers: { 'X-Master-Key': JSONBIN_KEY }
-  });
-  if (!res.ok) throw new Error('فشل الاتصال بقاعدة البيانات');
-  const data = await res.json();
-  return data.record.licenses || [];
-}
+const LICENSE_LOGIN_API = '/api/license/login';
 
 // ============================================================
 // PARTICLES
@@ -733,13 +722,13 @@ function getDeviceId() {
   return id;
 }
 
-async function saveLicenses(licenses) {
-  const res = await fetch(JSONBIN_URL, {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json', 'X-Master-Key': JSONBIN_KEY },
-    body: JSON.stringify({ licenses })
-  });
-  if (!res.ok) throw new Error('فشل حفظ البيانات');
+function errorMessage(error, maxUsers) {
+  if (error === 'not_found') return tr('msgNotFound');
+  if (error === 'disabled') return tr('msgDisabled');
+  if (error === 'expired') return tr('msgExpired');
+  if (error === 'max_devices') return `${tr('msgMaxDevices')} (${maxUsers || ''})`;
+  if (error === 'too_many_attempts') return '⚠️ محاولات كثيرة، انتظر قليلاً ثم أعد المحاولة';
+  return tr('msgConnErr');
 }
 
 // ============================================================
@@ -761,45 +750,19 @@ async function checkLicense() {
   showMsg('loading', tr('msgVerifying'));
 
   try {
-    // قراءة الترخيص فقط (سريع) — الكتابة تتم في الخلفية
-    const licenses = await getLicenses();
-    const idx = licenses.findIndex(l => l.code.replace(/-/g,'').toUpperCase() === code);
-
-    if (idx === -1) { showMsg('error', tr('msgNotFound')); restoreBtn(); return; }
-
-    const found = licenses[idx];
-    if (!found.active) { showMsg('error', tr('msgDisabled')); restoreBtn(); return; }
-
-    const now = new Date();
-    const expires = new Date(found.expiresAt);
-    if (now > expires) { showMsg('error', tr('msgExpired')); restoreBtn(); return; }
-
-    // ── Device enforcement ──
-    const deviceId = getDeviceId();
-    const devices = Array.isArray(found.devices) ? found.devices : [];
-    const maxUsers = found.maxUsers || 1;
-    const alreadyRegistered = devices.includes(deviceId);
-
-    if (!alreadyRegistered && devices.length >= maxUsers) {
-      showMsg('error', `${tr('msgMaxDevices')} (${maxUsers})`);
-      restoreBtn(); return;
+    const res = await fetch(LICENSE_LOGIN_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: raw, deviceId: getDeviceId() }),
+      cache: 'no-store'
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      showMsg('error', errorMessage(data.error, data.maxUsers));
+      restoreBtn();
+      return;
     }
-
-    // تحديث البيانات
-    if (!alreadyRegistered) devices.push(deviceId);
-    licenses[idx] = {
-      ...found,
-      devices,
-      currentUsers: devices.length,
-      lastLogin: new Date().toISOString()
-    };
-
-    // ✅ النجاح فوراً — لا انتظار للكتابة
-    handleSuccess(code, expires);
-
-    // 🔄 الكتابة في الخلفية (لا توقف المستخدم)
-    saveLicenses(licenses).catch(e => console.warn('Background save failed:', e));
-
+    handleSuccess(data.code || code, data.expiresAt);
   } catch(err) {
     showMsg('error', tr('msgConnErr'));
     restoreBtn();
@@ -809,9 +772,9 @@ async function checkLicense() {
 
 function handleSuccess(code, expires) {
   showMsg('success', tr('msgSuccess'));
-  sessionStorage.setItem('topo_license', code);
+  sessionStorage.setItem('topo_license', String(code || '').replace(/-/g, '').toUpperCase());
   sessionStorage.setItem('topo_auth', 'true');
-  sessionStorage.setItem('topo_expires', expires instanceof Date ? expires.toISOString() : new Date(expires).toISOString());
+  sessionStorage.setItem('topo_expires', new Date(expires).toISOString());
   setTimeout(() => { window.location.href = '/signals'; }, 1200);
 }
 
@@ -821,22 +784,7 @@ function showMsg(type, text) {
   msg.textContent = text;
 }
 </script>
-  <script>
-  document.addEventListener('contextmenu', e => e.preventDefault());
-  document.addEventListener('keydown', e => {
-    if (
-      e.key === 'F12' ||
-      (e.ctrlKey && e.shiftKey && ['I','J','C','K'].includes(e.key.toUpperCase())) ||
-      (e.ctrlKey && e.key.toUpperCase() === 'U') ||
-      (e.metaKey && e.altKey && ['I','J','C'].includes(e.key.toUpperCase()))
-    ) {
-      e.preventDefault();
-      return false;
-    }
-  });
-  // ❌ تمت إزالة setInterval(debugger) — كان يسبب جمود المتصفح كل ثانية
-  // ❌ تمت إزالة منع selectstart — لم يكن يضيف أمناً حقيقياً
-</script>
+
 
 </body>
 </html>

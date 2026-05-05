@@ -1,11 +1,12 @@
 {
-  "name": "topo-trading-vip",
-  "version": "1.0.0",
+  "name": "topo-trading-vip-secure",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "secure:hash": "node scripts/hash-password.js"
   },
   "dependencies": {
     "next": "14.2.5",

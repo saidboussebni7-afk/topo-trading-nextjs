@@ -6,8 +6,6 @@
 <title>TOPO TRADING VIP — الإشارات</title>
 <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700;900&family=Orbitron:wght@700;900&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
 
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 
 <style>
 *{margin:0;padding:0;box-sizing:border-box;}
@@ -643,17 +641,17 @@ body::before{
 
 <!-- TELEGRAM SETTINGS -->
 <div class="tg-settings" id="tgSettings">
-  <span class="ctrl-label">🤖 Bot Token:</span>
-  <input type="text" class="tg-input" id="botToken" placeholder="1234567890:ABCdef..." style="flex:1;min-width:250px;">
-  <span class="ctrl-label">📢 Chat/Channel ID:</span>
-  <input type="text" class="tg-input" id="chatId" placeholder="-1001234567890" style="width:180px;">
+  <span class="ctrl-label">🔒 Telegram:</span>
+  <span class="ctrl-label" style="color:var(--muted);">Bot Token و Chat ID محفوظان في السيرفر فقط، ولا يظهران للمستخدمين.</span>
+  <input type="hidden" id="botToken" value="server">
+  <input type="hidden" id="chatId" value="server">
   <span class="ctrl-label">🏷️ اسم القناة:</span>
   <input type="text" class="tg-input" id="channelName" placeholder="@YourChannel" style="width:160px;" dir="ltr">
   <span class="ctrl-label">🔗 رابط القناة:</span>
   <input type="text" class="tg-input" id="channelLink" placeholder="https://t.me/YourChannel" style="width:200px;" dir="ltr">
-  <button class="save-tg-btn" onclick="saveTGSettings()">💾 حفظ</button>
+  <button class="save-tg-btn" onclick="saveTGSettings()">💾 حفظ الاسم والرابط</button>
   <span class="tg-toggle-saved" id="tgSaved">✅ تم الحفظ</span>
-  <button class="tg-btn" onclick="testTelegram()" style="padding:7px 14px;font-size:11px;">🧪 اختبار</button>
+  <button class="tg-btn" onclick="testTelegram()" style="padding:7px 14px;font-size:11px;">🧪 اختبار السيرفر</button>
   <span class="ctrl-label">⏱ وقت التحضير:</span>
   <select id="leadTimeSel" onchange="setLeadTime(this.value)"
     style="background:#0a1428;color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;font-family:inherit;">
@@ -754,29 +752,36 @@ body::before{
 
 <script>
 // ============================================================
-// FIREBASE CONFIG
+// OPTIONAL FIRESTORE LOGGING DISABLED
 // ============================================================
-const firebaseConfig = {
-  apiKey: "YOUR_API_KEY",
-  authDomain: "YOUR_PROJECT.firebaseapp.com",
-  projectId: "YOUR_PROJECT_ID",
-  storageBucket: "YOUR_PROJECT.appspot.com",
-  messagingSenderId: "YOUR_SENDER_ID",
-  appId: "YOUR_APP_ID"
-};
-
 let db = null;
-try {
-  if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
-  db = firebase.firestore();
-} catch(e) {}
 
 // ============================================================
-// JSONBIN DATABASE (for live license verification)
+// SECURE LICENSE VERIFY — لا توجد مفاتيح JSONBin في المتصفح
 // ============================================================
-const JSONBIN_ID  = '69ee2e48856a68218974dc74';
-const JSONBIN_KEY = '$2a$10$x69VKI08PZXdy.vGGdiENuJpjwleAtpKh6XuiC2k1q5F1YPCSuW6m';
-const JSONBIN_URL = `https://api.jsonbin.io/v3/b/${JSONBIN_ID}`;
+const LICENSE_VERIFY_API = '/api/license/verify';
+
+async function apiFetch(path, options = {}) {
+  let body = options.body;
+  if (typeof body === 'string' && body.trim()) {
+    try { body = JSON.stringify(JSON.parse(body)); } catch (_) {}
+  }
+  const res = await fetch(path, {
+    ...options,
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json', 'X-Admin-Request': '1', ...(options.headers || {}) },
+    body
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data.ok === false || data.valid === false) {
+    const err = new Error(data.error || data.reason || 'request_failed');
+    err.data = data;
+    err.status = res.status;
+    throw err;
+  }
+  return data;
+}
 
 // ============================================================
 // SAFE NAVIGATION (avoids 404 on Vercel/Next.js where .html may strip)
@@ -837,28 +842,22 @@ async function verifyLicenseActive(force = false) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), LICENSE_FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(JSONBIN_URL + '/latest', {
-      headers: { 'X-Master-Key': JSONBIN_KEY },
+    const res = await fetch(LICENSE_VERIFY_API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ code, deviceId: getDeviceId() }),
       cache: 'no-store',
       signal: controller.signal
     });
     if (!res.ok) return true;
-    const data = await res.json();
-    const licenses = data.record.licenses || [];
-    const normalized = normalizeLicense(code);
-    const found = licenses.find(l => normalizeLicense(l.code) === normalized);
-    if (!found || !found.active || new Date() > new Date(found.expiresAt)) {
-      forceLogout();
+    const data = await res.json().catch(() => ({}));
+    if (!data.ok) return true;
+    if (!data.valid) {
+      forceLogout(data.reason === 'device_not_registered' ? 'device' : undefined);
       return false;
     }
-
-    const deviceId = getDeviceId();
-    if (Array.isArray(found.devices) && found.devices.length > 0 && !found.devices.includes(deviceId)) {
-      forceLogout('device');
-      return false;
-    }
-
-    sessionStorage.setItem('topo_license_checked_code', normalized);
+    sessionStorage.setItem('topo_license_checked_code', normalizeLicense(code));
     sessionStorage.setItem('topo_license_verified_until', String(Date.now() + LICENSE_VERIFY_CACHE_MS));
     return true;
   } catch(e) {
@@ -1123,7 +1122,7 @@ function stopBgInterval() {
 
 async function sendBgSignal() {
   const cfg = self._bgConfig;
-  if (!cfg || !cfg.token || !cfg.chatId) return;
+  if (!cfg) return;
 
   const pairs = cfg.pairType === 'otc'
     ? ['EUR/USD OTC','GBP/USD OTC','AUD/CAD OTC','EUR/JPY OTC','GBP/JPY OTC','USD/CHF OTC']
@@ -1161,10 +1160,11 @@ async function sendBgSignal() {
 _⚠️ التداول ينطوي على مخاطر_\`;
 
   try {
-    const res = await fetch('https://api.telegram.org/bot' + cfg.token + '/sendMessage', {
+    const res = await fetch('/api/telegram/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: cfg.chatId, text: msg, parse_mode: 'Markdown', disable_web_page_preview: false })
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Request': '1' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ text: msg, parse_mode: 'Markdown' })
     });
     const data = await res.json();
     // Notify page if visible
@@ -1187,10 +1187,11 @@ _⚠️ التداول ينطوي على مخاطر_\`;
 \${isWin ? '🏆 *النتيجة: ربح ✅*\\n💰 إشارة ناجحة — أحسنت!' : '📉 *النتيجة: خسارة ❌*\\n🔄 لا تقلق — الإشارة القادمة أقوى'}
 ━━━━━━━━━━━━━━━━━━
 📢 \${channel}\`;
-      await fetch('https://api.telegram.org/bot' + cfg.token + '/sendMessage', {
+      await fetch('/api/telegram/send', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: cfg.chatId, text: resultMsg, parse_mode: 'Markdown' })
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Request': '1' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ text: resultMsg, parse_mode: 'Markdown' })
       }).catch(() => {});
     }, (timeframeSec + leadSec + 5) * 1000);
   } catch(e) {}
@@ -1218,8 +1219,6 @@ function syncSwConfig() {
   navigator.serviceWorker.controller.postMessage({
     type: 'START_BG_SIGNALS',
     config: {
-      token: state.tgToken,
-      chatId: state.tgChatId,
       channelName: state.tgChannelName,
       pairType: state.pairType,
       timeframe: state.timeframe,
@@ -1244,13 +1243,13 @@ setInterval(() => {
 // INIT
 // ============================================================
 function init() {
-  // Load TG settings
-  state.tgToken = localStorage.getItem('topo_tg_token') || '';
-  state.tgChatId = localStorage.getItem('topo_tg_chat') || '';
+  // Telegram Bot Token and Chat ID stay on the server only.
+  state.tgToken = 'server';
+  state.tgChatId = 'server';
   state.tgChannelName = localStorage.getItem('topo_tg_channel_name') || '@TopotradingVIP';
   state.tgChannelLink = localStorage.getItem('topo_tg_channel_link') || 'https://t.me/TopotradingVIP';
-  if (state.tgToken) document.getElementById('botToken').value = state.tgToken;
-  if (state.tgChatId) document.getElementById('chatId').value = state.tgChatId;
+  document.getElementById('botToken').value = 'server';
+  document.getElementById('chatId').value = 'server';
   document.getElementById('channelName').value = state.tgChannelName;
   document.getElementById('channelLink').value = state.tgChannelLink;
   const langSelect = document.getElementById('langSelect');
@@ -1381,10 +1380,6 @@ function scheduleNextAutoTick() {
 function toggleAuto() {
   // Telegram-only mode — strict sequence: Signal → Result → Signal
   if (!state.autoMode) {
-    if (!state.tgToken || !state.tgChatId) {
-      showToast(t('tgMissingToast'));
-      return;
-    }
     state.autoMode = true;
     updateModeUI();
     startBackgroundKeepalive();
@@ -1509,15 +1504,12 @@ function toggleTGSettings() {
 }
 
 function saveTGSettings() {
-  state.tgToken = document.getElementById('botToken').value.trim();
-  state.tgChatId = document.getElementById('chatId').value.trim();
+  state.tgToken = 'server';
+  state.tgChatId = 'server';
   state.tgChannelName = document.getElementById('channelName').value.trim() || '@TopotradingVIP';
   state.tgChannelLink = document.getElementById('channelLink').value.trim() || 'https://t.me/TopotradingVIP';
-  localStorage.setItem('topo_tg_token', state.tgToken);
-  localStorage.setItem('topo_tg_chat', state.tgChatId);
   localStorage.setItem('topo_tg_channel_name', state.tgChannelName);
   localStorage.setItem('topo_tg_channel_link', state.tgChannelLink);
-  // Update header channel button live
   const tgBtn = document.getElementById('tgChannelBtn');
   if (tgBtn) {
     tgBtn.href = state.tgChannelLink;
@@ -1527,469 +1519,7 @@ function saveTGSettings() {
   const saved = document.getElementById('tgSaved');
   saved.style.display = 'inline';
   setTimeout(() => saved.style.display = 'none', 3000);
-  showToast('✅ تم حفظ إعدادات تيليجرام');
-}
-
-function toggleSound() {
-  state.soundOn = !state.soundOn;
-  const btns = document.querySelectorAll('#soundBtn, #soundBtnCtrl');
-  btns.forEach(b => {
-    b.textContent = state.soundOn ? '🔊' : '🔇';
-    b.classList.toggle('on', state.soundOn);
-  });
-}
-
-function logout() {
-  try {
-    sessionStorage.removeItem('topo_auth');
-    sessionStorage.removeItem('topo_license_verified_until');
-    sessionStorage.clear();
-  } catch (e) {}
-  goToLogin();
-}
-
-// ============================================================
-// SIGNAL GENERATION ENGINE
-// ============================================================
-function getPairs() {
-  if (state.pairType === 'otc') return OTC_PAIRS;
-  if (state.pairType === 'forex') return FOREX_PAIRS;
-  return [...OTC_PAIRS, ...FOREX_PAIRS];
-}
-
-function weightedRandom(items) {
-  const total = items.reduce((a, b) => a + b.weight, 0);
-  let r = Math.random() * total;
-  for (const item of items) {
-    r -= item.weight;
-    if (r <= 0) return item;
-  }
-  return items[0];
-}
-
-function analyzePair(pair) {
-  const trend = (Math.random() * 2) - 1;
-  const rsi = 22 + Math.random() * 56;
-  const macd = (Math.random() * 2) - 1;
-  const supportBounce = Math.random();
-  const resistanceReject = Math.random();
-  const volatility = 0.45 + Math.random() * 0.55;
-  const candleMomentum = (Math.random() * 2) - 1;
-  const callScore =
-    (trend > 0 ? 18 : 4) +
-    (rsi < 38 ? 18 : rsi < 52 ? 10 : 3) +
-    (macd > 0 ? 14 : 4) +
-    (supportBounce > 0.55 ? 18 : 8) +
-    (candleMomentum > 0 ? 14 : 5) +
-    Math.round(volatility * 10);
-  const putScore =
-    (trend < 0 ? 18 : 4) +
-    (rsi > 62 ? 18 : rsi > 48 ? 10 : 3) +
-    (macd < 0 ? 14 : 4) +
-    (resistanceReject > 0.55 ? 18 : 8) +
-    (candleMomentum < 0 ? 14 : 5) +
-    Math.round(volatility * 10);
-
-  const direction = callScore >= putScore ? 'CALL' : 'PUT';
-  const score = Math.max(callScore, putScore);
-  let strategyName = 'تقاطع EMA';
-  if (score >= 88 && Math.abs(macd) > 0.5) strategyName = 'تباعد MACD';
-  else if ((direction === 'CALL' && rsi < 38) || (direction === 'PUT' && rsi > 62)) strategyName = 'انعكاس RSI';
-  else if (supportBounce > 0.68 || resistanceReject > 0.68) strategyName = 'دعم ومقاومة';
-  else if (Math.abs(candleMomentum) > 0.55) strategyName = 'شمعة بينبار';
-  else if (volatility > 0.82) strategyName = 'ارتداد بولنجر';
-
-  return { direction, score, strategyName };
-}
-
-function generateSignal() {
-  const pairs = getPairs();
-  const activePairs = state.signals.map(s => s.pair);
-  // In auto Telegram mode, skip the recentPairs filter — the strict
-  // one-signal-at-a-time queue already prevents duplicate/overlapping signals,
-  // and filtering by history was causing all pairs to be excluded after a while.
-  const recentPairs = state.autoMode ? [] : state.history.slice(0, 5).map(s => s.pair);
-  let available = pairs.filter(p => !activePairs.includes(p) && !recentPairs.includes(p));
-  if (available.length === 0) available = pairs.filter(p => !activePairs.includes(p));
-  if (available.length === 0) return null;
-
-  const candidates = available.map(pair => ({ pair, analysis: analyzePair(pair) }))
-    .sort((a, b) => b.analysis.score - a.analysis.score);
-  const best = candidates[0];
-  // Use threshold 80 for auto Telegram mode (was 85) so signals aren't silently
-  // rejected too often. Website mode already shows a toast on rejection.
-  const threshold = state.tgActiveSignalId !== undefined && state.autoMode ? 80 : 85;
-  if (!best || best.analysis.score < threshold) return null;
-
-  const createdAt = Date.now();
-  // Lead time = configurable seconds before entry (10/15/20). Min 10s enforced elsewhere.
-  const leadMs = Math.max(10, state.leadTimeSec || 15) * 1000;
-  const entryTime = createdAt + leadMs;
-  const expireTime = entryTime + state.timeframe * 60 * 1000;
-  const strength = Math.min(96, Math.max(80, Math.round(best.analysis.score)));
-  const strengthClass = strength >= 88 ? 'high' : strength >= 80 ? 'mid' : 'low';
-
-  return {
-    id: 'sig_' + createdAt + '_' + Math.random().toString(36).slice(2, 6),
-    pair: best.pair,
-    direction: best.analysis.direction,
-    strategy: best.analysis.strategyName,
-    strength,
-    strengthLabel: strengthLabelFor(strength),
-    strengthClass,
-    timeframe: state.timeframe,
-    entryTime,
-    expireTime,
-    createdAt,
-    time: formatSignalTime(createdAt),
-    isOTC: best.pair.includes('OTC'),
-    isTgSignal: state.autoMode && !state.signalMode, // mark if this is a telegram-only signal
-  };
-}
-
-function generateNow(isAuto) {
-  const sig = generateSignal();
-  if (!sig) {
-    showToast(state.signals.length ? t('allPairsActive') : t('noSignalsToast'));
-    return;
-  }
-
-  state.lastSignalAt = sig.createdAt;
-  state.signals = [sig, ...state.signals].slice(0, 20);
-  renderSignals();
-  updateHeaderBadges();
-
-  if (state.soundOn) playAlert();
-  showToast(`${t('newSignalToast')}: ${sig.pair} — ${sig.direction}`);
-
-  // Auto generation stays inside the website only. Telegram sending remains manual from each card.
-  if (!isAuto && false) enqueueTelegram(sig);
-
-  if (db) {
-    db.collection('signals').add({
-      ...sig,
-      createdAtServer: firebase.firestore.FieldValue.serverTimestamp()
-    }).catch(() => {});
-  }
-}
-
-// ============================================================
-// RENDER SIGNALS
-// ============================================================
-function renderSignals() {
-  const list = document.getElementById('signalsList');
-  if (state.signals.length === 0) {
-    list.innerHTML = `<div class="empty-state">
-      <div class="e-icon">📡</div>
-      <div class="e-text" id="emptySignalsText">${t('emptySignals')}</div>
-    </div>`;
-    return;
-  }
-
-  list.innerHTML = state.signals.map(sig => {
-    const isCall = sig.direction === 'CALL';
-    const pct = Math.min(100, (sig.strength - 60) / 35 * 100);
-    const label = strengthLabelFor(sig.strength);
-    const labelColor = sig.strength >= 88 ? 'var(--green)' : sig.strength >= 80 ? 'var(--warn)' : 'var(--muted)';
-
-    return `
-    <div class="signal-card ${isCall ? 'call' : 'put'} new-flash" id="card_${sig.id}">
-      <button class="send-tg-card" onclick="sendToTelegram(getSignal('${sig.id}'));event.stopPropagation()">
-        ${t('send')}
-      </button>
-
-      <div class="dir-icon ${isCall ? 'call' : 'put'}">
-        <div class="dir-arrow">${isCall ? '▲' : '▼'}</div>
-        <div class="dir-text ${isCall ? 'call' : 'put'}">${sig.direction}</div>
-      </div>
-
-      <div class="sig-info">
-        <div class="sig-pair">${sig.pair}</div>
-        <div class="sig-strategy">${localizeStrategy(sig.strategy)}</div>
-        <div class="sig-meta">
-          <div class="sig-meta-item">⏱ ${sig.timeframe} ${t('minuteShort')}</div>
-          <div class="sig-meta-item">🕐 ${formatSignalTime(sig.createdAt || sig.entryTime)}</div>
-          <div class="sig-meta-item" style="color:${labelColor}">
-            ● ${label}
-          </div>
-        </div>
-        <div class="str-bar" style="margin-top:5px">
-          <div class="str-fill ${sig.strengthClass}" style="width:${pct}%"></div>
-        </div>
-      </div>
-
-      <div class="sig-right">
-        <div class="countdown-wrap">
-          <div class="countdown-val waiting" id="cd_${sig.id}">--:--</div>
-        </div>
-        <div class="sig-accuracy">${sig.strength}%</div>
-      </div>
-
-      <div class="enter-now" id="enter_${sig.id}">${t('enterNow')}</div>
-    </div>`;
-  }).join('');
-}
-
-function getSignal(id) {
-  return state.signals.find(s => s.id === id);
-}
-
-// ============================================================
-// COUNTDOWN TIMERS
-// ============================================================
-function tickCountdowns() {
-  const now = Date.now();
-  const toRemove = [];
-
-  state.signals.forEach(sig => {
-    const msToEntry  = sig.entryTime  - now;
-    const msToExpire = sig.expireTime - now;
-
-    // ── Expiry check FIRST — must run even if no DOM card exists ──
-    // On mobile, auto-mode signals live in state.signals but are never rendered,
-    // so getElementById returns null. The old code did `if (!cdEl) return` which
-    // prevented expiry detection entirely → Telegram result never sent → lock
-    // never released → all future signals silently blocked.
-    if (msToExpire < 0) {
-      toRemove.push(sig.id);
-      const result = Math.random() > 0.3 ? 'win' : 'loss'; // 70% win simulation
-      addToHistory(sig, result);
-      if (state.tgToken && state.tgChatId && state.tgActiveSignalId === sig.id) {
-        sendResultToTelegram(sig, result);
-        state.tgActiveSignalId = null;
-        // After result is sent, schedule next signal with a short delay (3s)
-        if (state.autoMode) {
-          if (state.autoInterval) clearTimeout(state.autoInterval);
-          state.autoInterval = setTimeout(function() {
-            tryAutoTelegramTick();
-            scheduleNextAutoTick();
-          }, 3000);
-        } else {
-          setTimeout(() => processNextTelegramQueue(), 2000);
-        }
-      }
-      return; // skip DOM update
-    }
-
-    // ── DOM countdown update (only when card is rendered) ──
-    const cdEl    = document.getElementById(`cd_${sig.id}`);
-    const enterEl = document.getElementById(`enter_${sig.id}`);
-    if (!cdEl) return; // card not in DOM — expiry already handled above, safe to skip
-
-    if (msToEntry > 0) {
-      const secs = Math.ceil(msToEntry / 1000);
-      const secUnit = state.language === 'ar' ? 'ث' : 's';
-      cdEl.textContent = secs + secUnit;
-      cdEl.className = 'countdown-val ' + (secs <= 10 ? 'soon' : 'waiting');
-      if (enterEl) enterEl.classList.remove('show');
-    } else {
-      const minsLeft = Math.floor(msToExpire / 60000);
-      const secsLeft = Math.floor((msToExpire % 60000) / 1000);
-      cdEl.textContent = `${minsLeft}:${String(secsLeft).padStart(2,'0')}`;
-      cdEl.className = 'countdown-val ready';
-      if (enterEl) enterEl.classList.add('show');
-    }
-  });
-
-  if (toRemove.length > 0) {
-    state.signals = state.signals.filter(s => !toRemove.includes(s.id));
-    renderSignals();
-    updateHeaderBadges();
-  }
-}
-
-// ============================================================
-// HISTORY
-// ============================================================
-function addToHistory(sig, result) {
-  state.history.unshift({
-    pair: sig.pair,
-    direction: sig.direction,
-    strategy: sig.strategy,
-    time: formatSignalTime(sig.createdAt || sig.entryTime),
-    createdAt: sig.createdAt || Date.now(),
-    result,
-    isTgSignal: sig.isTgSignal || false,
-  });
-  state.history = state.history.slice(0, 50);
-  localStorage.setItem('topo_history', JSON.stringify(state.history));
-  // ── push to time-window stats (excludes TG-only). Only count if window still active ──
-  if (result !== 'pending' && !sig.isTgSignal) {
-    const now = Date.now();
-    const windowMs = (state.statsRetentionHours || 0) * 3600 * 1000;
-    const windowActive = !state.statsRetentionHours || (now - state.statsWindowStart) < windowMs;
-    if (windowActive) {
-      state.statsHistory.push({ result, ts: now });
-      persistStatsHistory();
-      updateStatsUI();
-    }
-  }
-  renderHistory();
-}
-
-function renderHistory() {
-  const list = document.getElementById('historyList');
-  if (state.history.length === 0) {
-    list.innerHTML = `<div style="text-align:center;color:var(--muted);font-size:12px;padding:20px"><span id="emptyHistoryText">${t('noHistory')}</span></div>`;
-    return;
-  }
-  list.innerHTML = state.history.map(h => {
-    const resultText = h.result === 'win' ? t('resultWin') : h.result === 'loss' ? t('resultLoss') : t('resultPending');
-    return `
-    <div class="hist-item">
-      <div class="hist-dir">${h.direction === 'CALL' ? '▲' : '▼'}</div>
-      <div class="hist-info">
-        <div class="hist-pair">${h.pair}</div>
-        <div class="hist-time">${localizeStrategy(h.strategy)} · ${h.createdAt ? formatSignalTime(h.createdAt) : h.time}</div>
-      </div>
-      <div class="hist-result ${h.result}">${resultText}</div>
-    </div>`;
-  }).join('');
-}
-
-// ── Stats retention helpers ──
-function persistStatsHistory() {
-  // Cap history at 5000 to keep localStorage small
-  if (state.statsHistory.length > 5000) {
-    state.statsHistory = state.statsHistory.slice(-5000);
-  }
-  localStorage.setItem('topo_stats_history', JSON.stringify(state.statsHistory));
-}
-
-function pruneStatsHistory() {
-  // Keep only entries inside the active window [windowStart, windowStart + retention]
-  if (!state.statsRetentionHours || state.statsRetentionHours <= 0) return; // 0 = forever
-  const start = state.statsWindowStart;
-  const end = start + state.statsRetentionHours * 3600 * 1000;
-  const before = state.statsHistory.length;
-  state.statsHistory = state.statsHistory.filter(s => s.ts >= start && s.ts <= end);
-  if (state.statsHistory.length !== before) persistStatsHistory();
-}
-
-function clearStatsHistory() {
-  state.statsHistory = [];
-  // Reset the window — counting restarts from now
-  state.statsWindowStart = Date.now();
-  localStorage.setItem('topo_stats_window_start', String(state.statsWindowStart));
-  persistStatsHistory();
-  updateStatsUI();
-  showToast('🗑️ تم حذف الإحصائيات وبدأت نافذة جديدة');
-}
-
-function setStatsRetention(hours) {
-  state.statsRetentionHours = parseInt(hours, 10) || 0;
-  localStorage.setItem('topo_stats_retention', String(state.statsRetentionHours));
-  // Start a fresh counting window from this moment
-  state.statsWindowStart = Date.now();
-  localStorage.setItem('topo_stats_window_start', String(state.statsWindowStart));
-  pruneStatsHistory();
-  updateStatsUI();
-  if (state.statsRetentionHours > 0) {
-    showToast('⏱ نافذة الإحصائيات: ' + state.statsRetentionHours + ' ساعة');
-  } else {
-    showToast('♾ الإحصائيات: دائمة');
-  }
-}
-
-function setLeadTime(sec) {
-  const v = parseInt(sec, 10);
-  state.leadTimeSec = (v >= 10 && v <= 60) ? v : 15;
-  localStorage.setItem('topo_lead_time', String(state.leadTimeSec));
-  showToast('⏱ وقت التحضير: ' + state.leadTimeSec + 'ث');
-}
-
-function updateStatsUI() {
-  pruneStatsHistory();
-  const wins = state.statsHistory.filter(s => s.result === 'win').length;
-  const losses = state.statsHistory.filter(s => s.result === 'loss').length;
-  const total = wins + losses;
-  const winEl = document.getElementById('statWin'); if (winEl) winEl.textContent = wins;
-  const lossEl = document.getElementById('statLoss'); if (lossEl) lossEl.textContent = losses;
-  const totalEl = document.getElementById('statTotal'); if (totalEl) totalEl.textContent = total;
-  const rate = total > 0 ? Math.round((wins / total) * 100) + '%' : '-%';
-  const rateEl = document.getElementById('statRate'); if (rateEl) rateEl.textContent = rate;
-
-  // Show remaining time of current window in stats title
-  const titleEl = document.getElementById('statsTitle');
-  if (titleEl && state.statsRetentionHours > 0) {
-    const endTs = state.statsWindowStart + state.statsRetentionHours * 3600 * 1000;
-    const remainMs = endTs - Date.now();
-    const span = titleEl.querySelector('.stats-remain');
-    const txt = remainMs > 0
-      ? `⏳ متبقي: ${Math.floor(remainMs / 3600000)}س ${Math.floor((remainMs % 3600000) / 60000)}د`
-      : '⛔ انتهت النافذة';
-    if (span) span.textContent = txt;
-    else {
-      const s = document.createElement('div');
-      s.className = 'stats-remain';
-      s.style.cssText = 'width:100%;font-size:11px;color:var(--muted);margin-top:4px;text-align:center;';
-      s.textContent = txt;
-      titleEl.appendChild(s);
-    }
-  }
-}
-
-// Auto-prune every minute
-setInterval(() => { pruneStatsHistory(); updateStatsUI(); }, 60000);
-
-function updateHeaderBadges() {
-  const calls = state.signals.filter(s => s.direction === 'CALL').length;
-  const puts = state.signals.filter(s => s.direction === 'PUT').length;
-  document.getElementById('sigCount').textContent = `${state.signals.length} ${t('signalWord')}`;
-  document.getElementById('callBadge').textContent = `↑ CALL: ${calls}`;
-  document.getElementById('putBadge').textContent = `↓ PUT: ${puts}`;
-  document.getElementById('tfBadge').textContent = `${state.timeframe} ${t('minutes')}`;
-}
-
-// ============================================================
-// AUTO-RECOVERY: if tgActiveSignalId is stuck longer than (timeframe + 60s),
-// release the lock so the queue can continue. This is a last-resort safety net.
-// ============================================================
-setInterval(function recoverTgLock() {
-  if (!state.tgActiveSignalId) return;
-  const sig = state.signals.find(s => s.id === state.tgActiveSignalId);
-  if (!sig) {
-    // Signal gone but lock held — release immediately
-    state.tgActiveSignalId = null;
-    if (state.autoMode) {
-      if (state.autoInterval) clearTimeout(state.autoInterval);
-      scheduleNextAutoTick();
-    } else {
-      setTimeout(() => processNextTelegramQueue(), 1000);
-    }
-    return;
-  }
-  const maxWait = (state.timeframe * 60 + 90) * 1000; // timeframe + 90s grace
-  if (sig.createdAt && Date.now() - sig.createdAt > maxWait) {
-    state.tgActiveSignalId = null;
-    if (state.autoMode) {
-      if (state.autoInterval) clearTimeout(state.autoInterval);
-      scheduleNextAutoTick();
-    } else {
-      setTimeout(() => processNextTelegramQueue(), 1000);
-    }
-  }
-}, 15000);
-
-// ============================================================
-// TELEGRAM QUEUE — one signal at a time, waits for result
-// ============================================================
-function enqueueTelegram(sig) {
-  // Don't add duplicates
-  if (state.tgQueue.find(s => s.id === sig.id)) return;
-  state.tgQueue.push(sig);
-  // If nothing is currently active, process immediately
-  if (!state.tgActiveSignalId) {
-    processNextTelegramQueue();
-  }
-}
-
-function processNextTelegramQueue() {
-  if (state.tgActiveSignalId) return; // already waiting
-  if (state.tgQueue.length === 0) return;
-  const next = state.tgQueue.shift();
-  state.tgActiveSignalId = next.id;
-  sendToTelegram(next);
+  showToast('✅ تم حفظ اسم ورابط القناة — التوكن يبقى في السيرفر');
 }
 
 // ============================================================
@@ -1997,38 +1527,24 @@ function processNextTelegramQueue() {
 // ============================================================
 async function sendToTelegram(sig) {
   if (!sig) return;
-  if (!state.tgToken || !state.tgChatId) {
-    showToast('⚠️ اضبط إعدادات تيليجرام أولاً');
-    toggleTGSettings();
-    return;
-  }
 
-  // ── Lead-time guard: must have ≥10s before entry, otherwise SKIP ──
   const msToEntry = (sig.entryTime || 0) - Date.now();
   if (msToEntry < 10000) {
     showToast('⏭️ تم تخطي إشارة — وقت التحضير غير كافٍ (<10ث)');
-    // Release lock & remove from active list so the next can run
     if (state.tgActiveSignalId === sig.id) state.tgActiveSignalId = null;
     state.signals = state.signals.filter(s => s.id !== sig.id);
     if (state.autoMode) {
       if (state.autoInterval) clearTimeout(state.autoInterval);
-      state.autoInterval = setTimeout(function() {
-        tryAutoTelegramTick();
-        scheduleNextAutoTick();
-      }, 1500);
+      state.autoInterval = setTimeout(function() { tryAutoTelegramTick(); scheduleNextAutoTick(); }, 1500);
     } else {
       setTimeout(() => processNextTelegramQueue(), 1000);
     }
     return;
   }
 
-  // If nothing else is currently waiting for a result, claim the slot so that
-  // the result of THIS signal will also be posted to Telegram on expiry.
-  // This ensures manual "Send" clicks also produce a Result message.
   if (!state.tgActiveSignalId) state.tgActiveSignalId = sig.id;
 
   const channelTag = state.tgChannelName || '@TopotradingVIP';
-
   const isCall = sig.direction === 'CALL';
   const emoji = isCall ? '📈' : '📉';
   const dirAr = isCall ? t('buy') : t('sell');
@@ -2053,29 +1569,13 @@ ${dirAr}
 _⚠️ التداول ينطوي على مخاطر_`;
 
   try {
-    const res = await fetch(`https://api.telegram.org/bot${state.tgToken}/sendMessage`, {
+    const data = await apiFetch('/api/telegram/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: state.tgChatId,
-        text: msg,
-        parse_mode: 'Markdown',
-        disable_web_page_preview: false
-      })
+      body: JSON.stringify({ text: msg, parse_mode: 'Markdown' })
     });
-    const data = await res.json();
-    if (data.ok) {
-      showToast(`✅ تم إرسال إشارة ${sig.pair} للقناة`);
-    } else {
-      showToast('❌ فشل الإرسال: ' + (data.description || 'تحقق من الإعدادات'));
-      // On failure, release the active slot so queue can continue
-      if (state.tgActiveSignalId === sig.id) {
-        state.tgActiveSignalId = null;
-        setTimeout(() => processNextTelegramQueue(), 3000);
-      }
-    }
+    if (data.ok) showToast(`✅ تم إرسال إشارة ${sig.pair} للقناة`);
   } catch(e) {
-    showToast('❌ خطأ في الاتصال بتيليجرام');
+    showToast('❌ فشل الإرسال من السيرفر — تحقق من إعدادات Telegram');
     if (state.tgActiveSignalId === sig.id) {
       state.tgActiveSignalId = null;
       setTimeout(() => processNextTelegramQueue(), 3000);
@@ -2084,7 +1584,6 @@ _⚠️ التداول ينطوي على مخاطر_`;
 }
 
 async function sendResultToTelegram(sig, result) {
-  if (!state.tgToken || !state.tgChatId) return;
   const isWin = result === 'win';
   const isCall = sig.direction === 'CALL';
   const channelTag = state.tgChannelName || '@TopotradingVIP';
@@ -2096,47 +1595,40 @@ async function sendResultToTelegram(sig, result) {
 ${isCall ? '📈 CALL (شراء)' : '📉 PUT (بيع)'}
 ⏱ *المدة:* ${sig.timeframe} دقيقة
 ━━━━━━━━━━━━━━━━━━
-${isWin
-  ? '🏆 *النتيجة: ربح ✅*\n💰 إشارة ناجحة — أحسنت!'
-  : '📉 *النتيجة: خسارة ❌*\n🔄 لا تقلق — الإشارة القادمة أقوى'}
+${isWin ? '🏆 *النتيجة: ربح ✅*\n💰 إشارة ناجحة — أحسنت!' : '📉 *النتيجة: خسارة ❌*\n🔄 لا تقلق — الإشارة القادمة أقوى'}
 ━━━━━━━━━━━━━━━━━━
 📢 ${channelTag}`;
 
   try {
-    await fetch(`https://api.telegram.org/bot${state.tgToken}/sendMessage`, {
+    await apiFetch('/api/telegram/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: state.tgChatId,
-        text: msg,
-        parse_mode: 'Markdown'
-      })
+      body: JSON.stringify({ text: msg, parse_mode: 'Markdown' })
     });
   } catch(e) {}
 }
 
 async function testTelegram() {
-  state.tgToken = document.getElementById('botToken').value.trim();
-  state.tgChatId = document.getElementById('chatId').value.trim();
+  state.tgToken = 'server';
+  state.tgChatId = 'server';
   const channelTag = document.getElementById('channelName').value.trim() || '@TopotradingVIP';
+  const msg = `✅ *TOPO TRADING VIP*
 
-  const msg = `✅ *TOPO TRADING VIP*\n\nتم ربط البوت بنجاح! 🎉\n📢 ${channelTag}`;
+تم ربط إرسال تيليجرام من السيرفر بنجاح! 🎉
+📢 ${channelTag}`;
   try {
-    const res = await fetch(`https://api.telegram.org/bot${state.tgToken}/sendMessage`, {
+    const data = await apiFetch('/api/telegram/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chat_id: state.tgChatId, text: msg, parse_mode: 'Markdown' })
+      body: JSON.stringify({ text: msg, parse_mode: 'Markdown' })
     });
-    const data = await res.json();
-    if (data.ok) showToast('✅ تيليجرام يعمل بشكل صحيح!');
-    else showToast('❌ خطأ: ' + data.description);
+    if (data.ok) showToast('✅ تيليجرام يعمل من السيرفر بشكل صحيح!');
   } catch(e) {
-    showToast('❌ تعذر الاتصال');
+    showToast('❌ تعذر الإرسال — تحقق من TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID');
   }
 }
 
 // ============================================================
 // SOUND
+
 // ============================================================
 function playAlert() {
   try {
