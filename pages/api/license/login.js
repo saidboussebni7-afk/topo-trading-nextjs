@@ -1,7 +1,8 @@
+const { rateLimit } = require('../../../lib/security');
 const { createLicenseSession, requireSameOrigin } = require('../../../lib/session');
 const { getLicenses, saveLicenses } = require('../../../lib/jsonbin');
 
-const EXPIRATION_GRACE_MS = 2 * 60 * 1000; // 2 minutes grace for API/network delay
+const EXPIRATION_GRACE_MS = 2 * 60 * 1000;
 
 function normalizeCode(code) {
   return String(code || '').replace(/-/g, '').replace(/\s+/g, '').trim().toUpperCase();
@@ -44,6 +45,14 @@ function publicLicense(lic) {
 }
 
 export default async function handler(req, res) {
+  if (!rateLimit(req, 5, 60 * 1000)) {
+    return res.status(429).json({
+      ok: false,
+      error: 'too_many_attempts',
+      message: 'Too many attempts. Try again later.'
+    });
+  }
+
   if (req.method !== 'POST') {
     return res.status(405).json({ ok: false, error: 'method_not_allowed' });
   }
@@ -76,7 +85,6 @@ export default async function handler(req, res) {
     const expiresAt = validIsoDate(lic.expiresAt, days * 24 * 60 * 60 * 1000);
     const expiresMs = new Date(expiresAt).getTime();
 
-    // Grace prevents false expiry when API/server/client timing is delayed.
     if (lic.active === false || expiresMs + EXPIRATION_GRACE_MS <= Date.now()) {
       return res.status(403).json({
         ok: false,
