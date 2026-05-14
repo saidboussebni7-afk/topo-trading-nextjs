@@ -1,8 +1,5 @@
 import { NextResponse } from "next/server";
 
-const ADMIN_COOKIE = "topo_admin_session";
-const LICENSE_COOKIE = "topo_license_session";
-
 function secure(response) {
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("X-Content-Type-Options", "nosniff");
@@ -21,39 +18,22 @@ export function middleware(request) {
 
   const path = request.nextUrl.pathname;
 
-  const adminSession = request.cookies.get(ADMIN_COOKIE)?.value;
-  const licenseSession = request.cookies.get(LICENSE_COOKIE)?.value;
+  const response = NextResponse.next();
 
-  const isAdmin =
-    path.startsWith("/vip-admin-6d8f2a") ||
-    path.startsWith("/api/admin");
-
-  const isSignals =
-    path.startsWith("/signals") ||
-    path.startsWith("/legacy/signals.html") ||
-    path.startsWith("/api/signals");
-
-  if (isAdmin && !adminSession) {
-    if (path.startsWith("/api/")) {
-      return secure(
-        NextResponse.json({ ok: false, error: "admin_required" }, { status: 401 })
-      );
-    }
-
-    return secure(NextResponse.redirect(new URL("/", request.url)));
+  if (
+    path.startsWith("/api/") ||
+    path.includes("admin") ||
+    path.startsWith("/signals")
+  ) {
+    return secure(response);
   }
 
-  if (isSignals && !licenseSession && !adminSession) {
-    if (path.startsWith("/api/")) {
-      return secure(
-        NextResponse.json({ ok: false, error: "license_required" }, { status: 401 })
-      );
-    }
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=()");
 
-    return secure(NextResponse.redirect(new URL("/", request.url)));
-  }
-
-  return secure(NextResponse.next());
+  return response;
 }
 
 export const config = {
